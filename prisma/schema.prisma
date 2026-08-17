@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SenderType {
+  CUSTOMER
+  AGENT // AI / bot reply
+  STAFF // human staff member
+  SYSTEM
+}
+
+enum ConversationStatus {
+  open
+  pending // needs human attention
+  closed
+}
+
+enum StaffRole {
+  ADMIN
+  AGENT
+}
+
+model Page {
+  id            String   @id @default(cuid())
+  fbPageId      String   @unique
+  name          String
+  accessToken   String
+  verifyToken   String? // per-page webhook verify token
+  subscribed    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  conversations Conversation[]
+}
+
+model Conversation {
+  id               String            @id @default(cuid())
+  pageId           String
+  page             Page              @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  fbConversationId String
+  customerName     String            @default("Khách hàng")
+  customerFbId     String?
+  status           ConversationStatus @default(open)
+  aiEnabled        Boolean           @default(true)
+  assignedStaffId  String?
+  assignedStaff    Staff?            @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  lastMessageAt    DateTime?
+  lastMessagePreview String?
+  unreadCount      Int               @default(0)
+  aiReplyCount     Int               @default(0)
+  aiReplyWindowStart DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  messages Message[]
+  agentLogs AgentLog[]
+
+  @@unique([pageId, fbConversationId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     SenderType
+  senderId       String?
+  fbMessageId    String?
+  text           String?
+  attachments    Json?
+  isSent         Boolean   @default(false)
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Staff {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  role         StaffRole  @default(AGENT)
+  createdAt    DateTime   @default(now())
+
+  assignedConversations Conversation[]
+  refreshTokens         RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique // hash of the refresh token (never store raw)
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([staffId])
+}
+
+model AiRule {
+  id               String   @id @default(cuid())
+  name             String
+  keywords         Json // string[]
+  responseTemplate String?
+  enabled          Boolean  @default(true)
+  priority         Int      @default(0)
+  createdAt        DateTime @default(now())
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  keywords  Json // string[]
+  category  String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+model AgentLog {
+  id             String     @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  event          String // e.g. intent_classified, reply_generated, escalated, reply_sent
+  payload        Json?
+  createdAt      DateTime   @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Setting {
+  key   String @id
+  value String
+}

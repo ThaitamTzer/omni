@@ -1,0 +1,62 @@
+{
+  "name": "omni",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Facebook Messenger multi-page inbox with AI agentic (LangGraph + Strands)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces",
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "5.0.6",
+    "@types/node": "^22.10.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "prisma": "^6.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "6.0.0",
+    "vitest": "2.1.0"
+  },
+  "dependencies": {
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
+    "@mui/icons-material": "6.5.0",
+    "@mui/material": "6.5.0",
+    "@nestjs/bullmq": "11.0.5",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/jwt": "11.0.2",
+    "@nestjs/platform-express": "11.1.29",
+    "@nestjs/platform-socket.io": "11.1.29",
+    "@nestjs/websockets": "11.1.29",
+    "@prisma/client": "^6.19.3",
+    "@tanstack/react-query": "5.101.4",
+    "@types/cookie-parser": "^1.4.10",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.14.4",
+    "ioredis": "5.11.1",
+    "zod": "4.4.3",
+    "zustand": "5.0.15"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "dist",
+    "rootDir": "src",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
+    "baseUrl": ".",
+    "paths": {
+      "@omni/shared": ["../../packages/shared/src/index.ts"],
+      "@strands-agents/sdk/openai": ["../../node_modules/@strands-agents/sdk/dist/src/models/openai.d.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}
