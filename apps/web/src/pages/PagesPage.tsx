@@ -23,6 +23,13 @@ import {
   Avatar,
   Skeleton,
   Link,
+  Table,
+  TableContainer,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  TablePagination,
 } from '@mui/material';
 import {
   Add,
@@ -65,6 +72,9 @@ export default function PagesPage() {
 
   const [msg, setMsg] = useState('');
   const [msgError, setMsgError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<PageDto | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const pagesQuery = useQuery({
     queryKey: ['pages'],
@@ -94,7 +104,11 @@ export default function PagesPage() {
 
   const removePageMutation = useMutation({
     mutationFn: (id: string) => api.del(`/pages/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pages'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pages'] });
+      setConfirmDelete(null);
+      showMsg(t('pages.deleteSuccess'));
+    },
   });
 
   const addPage = (e: FormEvent) => {
@@ -102,7 +116,8 @@ export default function PagesPage() {
     addPageMutation.mutate();
   };
 
-  const removePage = (id: string) => removePageMutation.mutate(id);
+  // Pagination (client-side — page count is typically small)
+  const pagedPages = pages.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const regenerateVerifyToken = () => {
     const bytes = new Uint8Array(24);
@@ -141,15 +156,10 @@ export default function PagesPage() {
         </Alert>
       </Snackbar>
 
-      {/* Header — flat operational teal, no gradient (deslop: remove tech gradient) */}
-      <Paper
-        elevation={0}
+      {/* Page header — light, enterprise */}
+      <Box
         sx={{
-          p: 3.5,
-          mb: 3,
-          borderRadius: 2,
-          bgcolor: 'primary.main',
-          color: '#fff',
+          mb: 2.5,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -157,52 +167,37 @@ export default function PagesPage() {
           flexWrap: 'wrap',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
-          <Avatar sx={{ width: 56, height: 56, bgcolor: 'rgba(255,255,255,0.18)', fontSize: 30 }}>
-            <Facebook />
-          </Avatar>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 700, fontSize: 24, lineHeight: 1.2 }}>
-              {t('pages.title')}
-            </Typography>
-            <Typography sx={{ fontSize: 14, opacity: 0.9, mt: 0.5 }}>
-              {t('pages.subtitle')}
-            </Typography>
-          </Box>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, fontSize: 18, lineHeight: 1.3 }}>
+            {t('pages.title')}
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 0.5 }}>
+            {t('pages.subtitle')}
+          </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-          <Button
-            variant="contained"
-            startIcon={<HelpOutline />}
-            onClick={() => setHelpOpen(true)}
-            sx={{ bgcolor: 'rgba(255,255,255,0.18)', color: '#fff', '&:hover': { bgcolor: 'rgba(255,255,255,0.28)' } }}
-          >
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button variant="outlined" startIcon={<HelpOutline />} onClick={() => setHelpOpen(true)}>
             {t('pages.guide')}
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => setAddOpen(true)}
-            sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: '#eff6ff' } }}
-          >
+          <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)}>
             {t('pages.addPage')}
           </Button>
         </Box>
-      </Paper>
+      </Box>
 
-      {/* Summary line — replaces stat monument (deslop: no oversized numbers, no icon toppers) */}
+      {/* Summary line */}
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 1.5,
-          mb: 3,
+          mb: 2.5,
           px: 0.5,
           color: 'text.secondary',
           flexWrap: 'wrap',
         }}
       >
-        <Typography variant="body2" sx={{ fontSize: 14 }}>
+        <Typography variant="body2" sx={{ fontSize: 13 }}>
           <strong style={{ color: 'text.primary', fontWeight: 700 }}>{pages.length}</strong> {t('pages.total')} ·{' '}
           <strong style={{ color: 'success.main', fontWeight: 700 }}>{connectedCount}</strong> {t('pages.connected')} ·{' '}
           <strong style={{ color: 'warning.main', fontWeight: 700 }}>{pages.length - connectedCount}</strong> {t('pages.notConnected')}
@@ -240,88 +235,110 @@ export default function PagesPage() {
           </CardContent>
         </Card>
       ) : (
-        <Grid container spacing={2}>
-          {pages.map((p) => (
-            <Grid item xs={12} sm={6} md={4} key={p.id}>
-              <Card
-                elevation={0}
-                sx={{
-                  borderRadius: 1.5,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  transition: 'box-shadow 0.2s, transform 0.2s',
-                  '&:hover': { boxShadow: 4, transform: 'translateY(-2px)' },
-                  position: 'relative',
-                }}
-              >
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                    <Avatar sx={{ width: 48, height: 48, bgcolor: pageColor(p.id), fontSize: 20, fontWeight: 700 }}>
-                      {p.name
-                        .split(' ')
-                        .map((w) => w[0])
-                        .slice(0, 2)
-                        .join('')
-                        .toUpperCase()}
-                    </Avatar>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                        {p.fbPageId}
-                      </Typography>
-                      {p.verifyToken && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
-                            VT: {p.verifyToken}
-                          </Typography>
-                          <Tooltip title={t('pages.copy')}>
-                            <IconButton
-                              size="small"
-                              sx={{ p: 0.25 }}
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(p.verifyToken ?? '');
-                                  showMsg(t('pages.verifyTokenCopied'));
-                                } catch {
-                                  showMsg(t('pages.error'));
-                                }
-                              }}
-                            >
-                              <ContentCopy sx={{ fontSize: 11 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      )}
+        <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'surface2' }}>
+                <TableCell sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Page</TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Page ID</TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Verify Token</TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Trạng thái</TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Ngày tạo</TableCell>
+                <TableCell align="right" sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>Thao tác</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {pagedPages.map((p) => (
+                <TableRow key={p.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
+                  <TableCell sx={{ py: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                      <Avatar sx={{ width: 30, height: 30, bgcolor: pageColor(p.id), fontSize: 13, fontWeight: 700 }}>
+                        {p.name
+                          .split(' ')
+                          .map((w) => w[0])
+                          .slice(0, 2)
+                          .join('')
+                          .toUpperCase()}
+                      </Avatar>
+                      <Typography sx={{ fontWeight: 600, fontSize: 13.5 }}>{p.name}</Typography>
                     </Box>
-                    <Tooltip title={t('pages.delete')}>
-                      <IconButton size="small" color="error" onClick={() => removePage(p.id)}>
-                        <DeleteOutline fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-
-                  <Divider sx={{ mb: 1.5 }} />
-
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  </TableCell>
+                  <TableCell sx={{ py: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                      {p.fbPageId}
+                    </Typography>
+                  </TableCell>
+                  <TableCell sx={{ py: 1 }}>
+                    {p.verifyToken ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+                          {p.verifyToken}
+                        </Typography>
+                        <Tooltip title={t('pages.copy')}>
+                          <IconButton
+                            size="small"
+                            sx={{ p: 0.25 }}
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(p.verifyToken ?? '');
+                                showMsg(t('pages.verifyTokenCopied'));
+                              } catch {
+                                showMsg(t('pages.error'));
+                              }
+                            }}
+                          >
+                            <ContentCopy sx={{ fontSize: 11 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">—</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ py: 1 }}>
                     <Chip
                       size="small"
-                      icon={p.subscribed ? <CheckCircle sx={{ fontSize: 14 }} /> : <RadioButtonUnchecked sx={{ fontSize: 14 }} />}
+                      icon={p.subscribed ? <CheckCircle sx={{ fontSize: 13 }} /> : <RadioButtonUnchecked sx={{ fontSize: 13 }} />}
                       label={p.subscribed ? t('pages.connectedStatus') : t('pages.notConnectedStatus')}
                       color={p.subscribed ? 'success' : 'default'}
                       variant={p.subscribed ? 'filled' : 'outlined'}
-                      sx={{ height: 24, fontSize: 12 }}
+                      sx={{ height: 22, fontSize: 11 }}
                     />
-                    <Typography variant="caption" color="text.secondary">
+                  </TableCell>
+                  <TableCell sx={{ py: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
                       {new Date(p.createdAt).toLocaleDateString('vi-VN')}
                     </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                  </TableCell>
+                  <TableCell align="right" sx={{ py: 1 }}>
+                    <Tooltip title={t('pages.delete')}>
+                      <IconButton size="small" color="error" onClick={() => setConfirmDelete(p)}>
+                        <DeleteOutline fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {pages.length > rowsPerPage && (
+        <TablePagination
+          component="div"
+          count={pages.length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[10, 25, 50]}
+          labelRowsPerPage="Số dòng / trang"
+          sx={{ fontSize: 13 }}
+        />
       )}
 
       {/* Webhook hint */}
@@ -466,6 +483,41 @@ export default function PagesPage() {
             }}
           >
             {t('pages.guideCTA')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteOutline color="error" />
+            <Typography sx={{ fontWeight: 700 }}>{t('pages.deleteConfirm')}</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setConfirmDelete(null)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: 13 }}>
+            {confirmDelete ? (
+              <>
+                <strong>{confirmDelete.name}</strong> ({confirmDelete.fbPageId}) sẽ bị xóa khỏi hệ thống. Hội thoại liên quan cũng sẽ bị xóa.
+              </>
+            ) : null}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setConfirmDelete(null)}>{t('pages.cancel')}</Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={removePageMutation.isPending ? <Skeleton variant="circular" width={14} height={14} /> : <DeleteOutline fontSize="small" />}
+            onClick={() => confirmDelete && removePageMutation.mutate(confirmDelete.id)}
+            disabled={removePageMutation.isPending}
+          >
+            {t('pages.delete')}
           </Button>
         </DialogActions>
       </Dialog>

@@ -3,7 +3,6 @@ import { io, Socket } from 'socket.io-client';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
-  Paper,
   List,
   ListItemButton,
   ListItemAvatar,
@@ -80,6 +79,9 @@ export default function Inbox() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState('');
   const [msgError, setMsgError] = useState('');
+  const [pendingMessages, setPendingMessages] = useState<
+    { tempId: string; text: string; status: 'sending' | 'error' }[]
+  >([]);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -129,13 +131,20 @@ export default function Inbox() {
   const invalidateConversations = () => queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
   const sendMessageMutation = useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: ({ text }: { text: string; tempId: string }) =>
       api.post<MessageDto>(`/conversations/${selectedId}/messages`, { text, staffId: staff?.id }),
-    onSuccess: (saved) => {
+    onMutate: ({ text, tempId }) => {
+      setPendingMessages((prev) => [...prev.filter((p) => p.tempId !== tempId), { tempId, text, status: 'sending' }]);
+    },
+    onSuccess: (saved, { tempId }) => {
+      setPendingMessages((prev) => prev.filter((p) => p.tempId !== tempId));
       queryClient.setQueryData<MessageDto[]>(['messages', selectedId], (old) =>
         old && old.some((m) => m.id === saved.id) ? old : [...(old ?? []), saved],
       );
       invalidateConversations();
+    },
+    onError: (_e, { tempId }) => {
+      setPendingMessages((prev) => prev.map((p) => (p.tempId === tempId ? { ...p, status: 'error' } : p)));
     },
   });
 
@@ -308,9 +317,13 @@ export default function Inbox() {
   const sendMessage = () => {
     if (!draft.trim() || !selected || !staff) return;
     const text = draft.trim();
-    sendMessageMutation.mutate(text, {
-      onSuccess: () => setDraft(''),
-    });
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setDraft('');
+    sendMessageMutation.mutate({ text, tempId });
+  };
+
+  const retryMessage = (p: { tempId: string; text: string }) => {
+    sendMessageMutation.mutate({ text: p.text, tempId: p.tempId });
   };
 
   const filtered = conversations
@@ -348,17 +361,17 @@ export default function Inbox() {
   const allSelected = listItems.length > 0 && listItems.every((c) => selectedIds.has(c.id));
 
   return (
-    <Box sx={{ display: 'flex', gap: 2, p: 2, height: 'calc(100vh - 76px)', minHeight: 0 }}>
+    <Box sx={{ display: 'flex', height: '100%', minHeight: 0 }}>
       {/* Conversation list */}
-      <Paper
-        elevation={0}
+      <Box
         sx={{
-          width: 340,
+          width: { xs: 0, sm: 280, md: 340 },
           flexShrink: 0,
-          borderRadius: 2,
-          display: 'flex',
+          bgcolor: 'background.paper',
+          borderRight: '1px solid',
+          borderColor: 'divider',
+          display: { xs: 'none', sm: 'flex' },
           flexDirection: 'column',
-          overflow: 'hidden',
         }}
       >
         <Box sx={{ p: 1.5 }}>
@@ -451,7 +464,20 @@ export default function Inbox() {
                   key={c.id}
                   selected={c.id === selectedId}
                   onClick={() => setSelectedId(c.id)}
-                  sx={{ mx: 1, my: 0.25, px: 1, py: 1.25, borderRadius: 1.5, '& .conv-delete': { opacity: 0, transition: 'opacity 0.15s' }, '&:hover .conv-delete': { opacity: 1 } }}
+                  sx={{
+                    px: 1.25,
+                    py: 1,
+                    borderRadius: 0,
+                    borderLeft: '3px solid transparent',
+                    '&.Mui-selected': {
+                      bgcolor: '#eff4ff',
+                      borderLeftColor: 'primary.main',
+                      '&:hover': { bgcolor: '#e4edff' },
+                    },
+                    '&:hover': { bgcolor: '#f7f8fa' },
+                    '& .conv-delete': { opacity: 0, transition: 'opacity 0.15s' },
+                    '&:hover .conv-delete': { opacity: 1 },
+                  }}
                 >
                   <Checkbox
                     size="small"
@@ -460,8 +486,8 @@ export default function Inbox() {
                     onChange={() => toggleSelect(c.id)}
                     sx={{ p: 0.5, mr: 0.5 }}
                   />
-                  <ListItemAvatar sx={{ minWidth: 46 }}>
-                    <CustomerAvatar name={c.customerName} avatar={c.customerAvatar} size={40} />
+                  <ListItemAvatar sx={{ minWidth: 42 }}>
+                    <CustomerAvatar name={c.customerName} avatar={c.customerAvatar} size={36} />
                   </ListItemAvatar>
                   <ListItemText
                     disableTypography
@@ -567,12 +593,11 @@ export default function Inbox() {
             </List>
           )}
         </Box>
-      </Paper>
+      </Box>
 
       {/* Chat pane */}
-      <Paper
-        elevation={0}
-        sx={{ flex: 1, minWidth: 0, borderRadius: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      <Box
+        sx={{ flex: 1, minWidth: 0, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column' }}
       >
         {!selected ? (
           <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -583,7 +608,7 @@ export default function Inbox() {
             {/* Chat header */}
             <Box sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-                <CustomerAvatar name={selected.customerName} avatar={selected.customerAvatar} size={40} />
+                <CustomerAvatar name={selected.customerName} avatar={selected.customerAvatar} size={36} />
                 <Box sx={{ minWidth: 0 }}>
                   <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{selected.customerName}</Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
@@ -677,45 +702,93 @@ export default function Inbox() {
                           justifyContent: isCustomer ? 'flex-start' : 'flex-end',
                         }}
                       >
-                    <Box
-                      sx={{
-                        maxWidth: '68%',
-                        px: 1.5,
-                        py: 1,
-                        borderRadius: 1.5,
-                        bgcolor: isCustomer ? 'background.paper' : isStaff ? 'custom.staffBubble' : 'secondary.main',
-                        color: isCustomer ? 'text.primary' : '#fff',
-                        borderBottomLeftRadius: isCustomer ? 3 : 10,
-                        borderBottomRightRadius: isCustomer ? 10 : 3,
-                        boxShadow: 1,
-                        fontSize: 14,
-                        lineHeight: 1.5,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {m.text ?? t('inbox.imageAttachment')}
-                      <Box
-                        sx={{
-                          fontSize: 10,
-                          opacity: 0.75,
-                          mt: 0.5,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 0.5,
-                          justifyContent: isCustomer ? 'flex-start' : 'flex-end',
-                        }}
-                      >
-                        {isAgent && <><SmartToy sx={{ fontSize: 11 }} /> AI</>}
-                        {isStaff && t('inbox.staffShort')}
-                        {formatTime(m.createdAt)}
+                        <Box
+                          sx={{
+                            maxWidth: '68%',
+                            px: 1.25,
+                            py: 0.75,
+                            borderRadius: 1,
+                            border: '1px solid',
+                            borderColor: isCustomer ? '#d8dce2' : isStaff ? '#9cc0f8' : '#cabffd',
+                            bgcolor: isCustomer ? '#f3f4f6' : isStaff ? '#dbeafe' : '#ede9fe',
+                            fontSize: 13.5,
+                            lineHeight: 1.5,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              mb: 0.25,
+                              color: isCustomer ? 'text.secondary' : isStaff ? '#1d4ed8' : '#6d28d9',
+                            }}
+                          >
+                            {isCustomer ? t('inbox.customer') : isStaff ? t('inbox.staff') : 'AI'}
+                          </Box>
+                          {m.text ?? t('inbox.imageAttachment')}
+                          <Box
+                            sx={{
+                              fontSize: 10.5,
+                              color: 'text.secondary',
+                              mt: 0.5,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              justifyContent: isCustomer ? 'flex-start' : 'flex-end',
+                            }}
+                          >
+                            {isAgent && <SmartToy sx={{ fontSize: 11 }} />}
+                            {formatTime(m.createdAt)}
+                          </Box>
+                        </Box>
                       </Box>
-                    </Box>
-                  </Box>
-                );
+                    );
                   })}
                 </>
               )}
+              {/* Pending (sending / error) messages */}
+              {pendingMessages.map((p) => (
+                <Box key={p.tempId} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Box
+                    sx={{
+                      maxWidth: '68%',
+                      px: 1.25,
+                      py: 0.75,
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: p.status === 'error' ? '#f0b8b8' : '#9cc0f8',
+                      bgcolor: p.status === 'error' ? '#fef2f2' : '#dbeafe',
+                      fontSize: 13.5,
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      opacity: p.status === 'sending' ? 0.75 : 1,
+                    }}
+                  >
+                    <Box sx={{ fontSize: 11, fontWeight: 600, mb: 0.25, color: '#1d4ed8' }}>
+                      {t('inbox.staff')}
+                    </Box>
+                    {p.text}
+                    <Box sx={{ fontSize: 10.5, color: 'text.secondary', mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
+                      {p.status === 'sending' ? (
+                        <>
+                          <CircularProgress size={10} />
+                          {t('inbox.sending')}
+                        </>
+                      ) : (
+                        <>
+                          <Typography sx={{ fontSize: 10.5, color: 'error.main' }}>{t('inbox.errorSend')}</Typography>
+                          <Button size="small" sx={{ fontSize: 11, minWidth: 0, px: 0.75, py: 0.25 }} onClick={() => retryMessage(p)}>
+                            {t('inbox.retry')}
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              ))}
               {typing && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: 12, px: 0.5 }}>
                   <SmartToy sx={{ fontSize: 14 }} />
@@ -745,7 +818,7 @@ export default function Inbox() {
 
             {/* Input */}
             {!selected.deletedAt && (
-              <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1, bgcolor: 'background.paper' }}>
+              <Box sx={{ px: { xs: 1.25, sm: 2.5 }, py: 1.25, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1, bgcolor: 'background.paper' }}>
                 <TextField
                   size="small"
                   placeholder={t('inbox.typeMessage')}
@@ -753,16 +826,30 @@ export default function Inbox() {
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                   fullWidth
-                  sx={{ bgcolor: 'background.default' }}
+                  sx={{ bgcolor: 'background.default', '& .MuiInputBase-input': { fontSize: { xs: 14, sm: 13.5 } } }}
                 />
-                <Button variant="contained" onClick={sendMessage} disabled={!draft.trim() || sendMessageMutation.isPending} sx={{ minWidth: 90 }}>
-                  {sendMessageMutation.isPending ? t('inbox.sending') : (<><Send fontSize="small" sx={{ mr: 0.5 }} /> {t('inbox.send')}</>)}
+                <Button
+                  variant="contained"
+                  onClick={sendMessage}
+                  disabled={!draft.trim() || sendMessageMutation.isPending}
+                  sx={{ minWidth: { xs: 44, sm: 90 }, px: { xs: 1, sm: 1.75 } }}
+                >
+                  {sendMessageMutation.isPending ? (
+                    <CircularProgress size={16} />
+                  ) : (
+                    <>
+                      <Send fontSize="small" sx={{ mr: { xs: 0, sm: 0.5 } }} />
+                      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                        {t('inbox.send')}
+                      </Box>
+                    </>
+                  )}
                 </Button>
               </Box>
             )}
           </>
         )}
-      </Paper>
+      </Box>
 
       {/* Delete forever confirmation dialog */}
       <Dialog open={!!confirmDeleteForever} onClose={() => setConfirmDeleteForever(null)} fullWidth maxWidth="xs">

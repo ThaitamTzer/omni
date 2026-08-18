@@ -9,10 +9,7 @@ import {
   TextField,
   Typography,
   Alert,
-  Avatar,
-  Stack,
 } from '@mui/material';
-import { ChatBubbleOutline } from '@mui/icons-material';
 import { useAuthStore } from '../lib/authStore';
 import { api } from '../lib/api';
 import type { Staff } from '../lib/authStore';
@@ -51,24 +48,19 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 60%)',
+        bgcolor: 'background.default',
       }}
     >
-      <Card sx={{ width: 380, p: 1 }} elevation={0}>
+      <Card sx={{ width: 360, border: '1px solid', borderColor: 'divider' }} elevation={0}>
         <CardContent sx={{ px: 3.5, py: 4 }}>
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
-            <Avatar sx={{ width: 48, height: 48, bgcolor: 'primary.main', fontSize: 24 }}>
-              <ChatBubbleOutline />
-            </Avatar>
-            <Box>
-              <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                {t('app.name')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('login.subtitle')}
-              </Typography>
-            </Box>
-          </Stack>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, fontSize: 20 }}>
+              {t('app.name')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: 13 }}>
+              {t('login.subtitle')}
+            </Typography>
+          </Box>
 
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <TextField
@@ -94,10 +86,6 @@ export default function Login() {
               {loading ? t('common.loading') : t('login.submit')}
             </Button>
           </form>
-
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 2.5 }}>
-            Mặc định: admin@omni.local / admin123
-          </Typography>
         </CardContent>
       </Card>
     </Box>

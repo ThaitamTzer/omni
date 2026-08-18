@@ -18,7 +18,6 @@ import {
   Snackbar,
   Stack,
   Tooltip,
-  Paper,
   Avatar,
   Grid,
   Divider,
@@ -193,36 +192,15 @@ export default function SettingsPage() {
         </Alert>
       </Snackbar>
 
-      {/* Header — đồng bộ với PagesPage */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3.5,
-          mb: 3,
-          borderRadius: 2,
-          bgcolor: 'primary.main',
-          color: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 2,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
-          <Avatar sx={{ width: 56, height: 56, bgcolor: 'rgba(255,255,255,0.18)', fontSize: 30 }}>
-            <SettingsIcon />
-          </Avatar>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 700, fontSize: 24, lineHeight: 1.2 }}>
-              {t('settings.title')}
-            </Typography>
-            <Typography sx={{ fontSize: 14, opacity: 0.9, mt: 0.5 }}>
-              {t('settings.subtitle')}
-            </Typography>
-          </Box>
-        </Box>
-      </Paper>
+      {/* Page header — light, enterprise */}
+      <Box sx={{ mb: 2.5 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, fontSize: 18, lineHeight: 1.3 }}>
+          {t('settings.title')}
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 0.5 }}>
+          {t('settings.subtitle')}
+        </Typography>
+      </Box>
 
       <Grid container spacing={3}>
         {/* AI Rules */}

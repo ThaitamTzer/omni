@@ -54,6 +54,7 @@
     "delivered": "Đã giao",
     "seen": "Đã xem",
     "errorSend": "Không gửi được tin nhắn",
+    "retry": "Thử lại",
     "conversationClosed": "Đã đóng hội thoại",
     "reopen": "Mở lại",
     "trash": "Đã xóa",
