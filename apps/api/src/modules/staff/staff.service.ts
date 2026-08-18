@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 const REFRESH_TOKEN_DAYS = 30;
 const REFRESH_COOKIE = 'omni_refresh';
 
+type RequestWithCookies = Request & { cookies?: Record<string, string> };
+
 @Injectable()
 export class StaffService {
   constructor(
@@ -76,8 +78,8 @@ export class StaffService {
   /**
    * Exchange a valid refresh token (from HttpOnly cookie) for a new access token + rotate refresh token.
    */
-  async refresh(req: Request, res: Response) {
-    const refreshToken: string | undefined = (req as Request & { cookies?: Record<string, string> }).cookies?.[REFRESH_COOKIE];
+  async refresh(req: RequestWithCookies, res: Response) {
+    const refreshToken: string | undefined = req.cookies?.[REFRESH_COOKIE];
     if (!refreshToken) {
       throw new UnauthorizedException('Thiếu refresh token');
     }
@@ -111,8 +113,8 @@ export class StaffService {
   /**
    * Revoke a refresh token (logout).
    */
-  async logout(req: Request, res: Response) {
-    const refreshToken: string | undefined = (req as Request & { cookies?: Record<string, string> }).cookies?.[REFRESH_COOKIE];
+  async logout(req: RequestWithCookies, res: Response) {
+    const refreshToken: string | undefined = req.cookies?.[REFRESH_COOKIE];
     if (refreshToken) {
       const tokenHash = this.hashToken(refreshToken);
       await this.prisma.refreshToken.updateMany({

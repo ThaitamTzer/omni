@@ -17,10 +17,9 @@ const ConversationState = Annotation.Root({
 
 type State = typeof ConversationState.State;
 
-const REPLY_INTENTS = ['product', 'price', 'order', 'shipping', 'faq', 'greeting', 'thanks'];
 const ESCALATE_KEYWORDS = [
-  'khiếu nại', 'khiếu nại', 'phàn nàn', 'bực', 'tệ', 'tệ quá', 'lừa đảo',
-  'khiếu nại', 'complaint', 'scam', 'không hài lòng', 'trả lại', 'hoàn tiền', 'refund',
+  'khiếu nại', 'phàn nàn', 'bực', 'tệ', 'tệ quá', 'lừa đảo',
+  'complaint', 'scam', 'không hài lòng', 'trả lại', 'hoàn tiền', 'refund',
   'luật sư', 'báo công an', 'kiện', 'tòa án', 'bồi thường',
 ];
 
@@ -78,10 +77,6 @@ export class LangGraphWorkflow {
     }
     // Unknown/low-confidence — ask a human
     return { action: 'escalate' };
-  }
-
-  private async skipNode(state: State): Promise<Partial<State>> {
-    return { action: 'skip' };
   }
 
   private buildGraph() {

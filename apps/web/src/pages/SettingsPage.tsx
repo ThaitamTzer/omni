@@ -14,8 +14,6 @@ import {
   TableCell,
   Chip,
   Switch,
-  Alert,
-  Snackbar,
   Stack,
   Tooltip,
   Avatar,
@@ -31,6 +29,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import EmptyState from '../components/EmptyState';
+import Toast from '../components/Toast';
 import type { AiRuleDto, FaqDto } from '@omni/shared';
 
 export default function SettingsPage() {
@@ -178,19 +177,7 @@ export default function SettingsPage() {
 
   return (
     <Box sx={{ p: 3, maxWidth: 1100, mx: 'auto' }}>
-      <Snackbar
-        open={!!msg || !!msgError}
-        autoHideDuration={4000}
-        onClose={() => {
-          setMsg('');
-          setMsgError('');
-        }}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert severity={msgError ? 'error' : 'success'} variant="filled" onClose={() => { setMsg(''); setMsgError(''); }}>
-          {msgError || msg}
-        </Alert>
-      </Snackbar>
+      <Toast message={msg} error={msgError} onClose={() => { setMsg(''); setMsgError(''); }} />
 
       {/* Page header — light, enterprise */}
       <Box sx={{ mb: 2.5 }}>

@@ -80,11 +80,8 @@ async function main() {
   // Default settings
   const settings = [
     { key: 'ai_tone', value: 'Thân thiện, lịch sự, xưng hô "dạ/ạ" với khách hàng.' },
-    { key: 'ai_language', value: 'vi' },
-    { key: 'ai_auto_reply_enabled', value: 'true' },
     { key: 'ai_max_replies_per_hour', value: '10' },
     { key: 'ai_max_replies_per_conversation', value: '10' },
-    { key: 'business_hours', value: '{"mon-fri":"08:00-18:00","sat":"08:00-12:00"}' },
   ];
   for (const s of settings) {
     await prisma.setting.upsert({

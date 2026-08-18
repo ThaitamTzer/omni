@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { MessengerService } from '../../messenger/messenger.service';
+import { SettingsService } from '../../settings/settings.service';
 import { AiDecision } from '../ai.service';
 
 interface GenerateReplyArgs {
@@ -27,6 +28,7 @@ export class StrandsAgentService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
     private readonly realtime: RealtimeGateway,
     private readonly messenger: MessengerService,
   ) {
@@ -146,7 +148,7 @@ export class StrandsAgentService {
    * Generate a reply for a conversation using the Strands agent.
    */
   async generateReply(args: GenerateReplyArgs): Promise<string | null> {
-    const settings = await this.getSettings();
+    const settings = await this.settings.getAll();
     const tone = settings.ai_tone ?? 'Thân thiện, lịch sự, xưng hô dạ/ạ với khách hàng.';
 
     const systemPrompt = `Bạn là trợ lý CSKH của shop, tên là Omni Bot.
@@ -210,10 +212,5 @@ export class StrandsAgentService {
     });
 
     this.realtime.emitNewMessage(conversation.id, saved);
-  }
-
-  private async getSettings(): Promise<Record<string, string>> {
-    const rows = await this.prisma.setting.findMany();
-    return Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]));
   }
 }

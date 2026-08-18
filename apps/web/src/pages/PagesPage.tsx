@@ -8,8 +8,6 @@ import {
   TextField,
   Button,
   Chip,
-  Alert,
-  Snackbar,
   InputAdornment,
   Tooltip,
   Grid,
@@ -22,6 +20,7 @@ import {
   Paper,
   Avatar,
   Skeleton,
+  CircularProgress,
   Link,
   Table,
   TableContainer,
@@ -48,13 +47,8 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { PageDto } from '@omni/shared';
-
-function pageColor(id: string): string {
-  const colors = ['#2563eb', '#6d28d9', '#0e7490', '#b45309', '#be185d', '#047857'];
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return colors[Math.abs(hash) % colors.length];
-}
+import { avatarColor, initials } from '../components/InitialsAvatar';
+import Toast from '../components/Toast';
 
 export default function PagesPage() {
   const { t } = useTranslation();
@@ -142,19 +136,7 @@ export default function PagesPage() {
 
   return (
     <Box sx={{ p: 3, maxWidth: 1100, mx: 'auto' }}>
-      <Snackbar
-        open={!!msg || !!msgError}
-        autoHideDuration={4000}
-        onClose={() => {
-          setMsg('');
-          setMsgError('');
-        }}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert severity={msgError ? 'error' : 'success'} variant="filled" onClose={() => { setMsg(''); setMsgError(''); }}>
-          {msgError || msg}
-        </Alert>
-      </Snackbar>
+      <Toast message={msg} error={msgError} onClose={() => { setMsg(''); setMsgError(''); }} />
 
       {/* Page header — light, enterprise */}
       <Box
@@ -179,7 +161,7 @@ export default function PagesPage() {
           <Button variant="outlined" startIcon={<HelpOutline />} onClick={() => setHelpOpen(true)}>
             {t('pages.guide')}
           </Button>
-          <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)}>
+          <Button variant="contained" startIcon={<Add />} onClick={openAddDialog}>
             {t('pages.addPage')}
           </Button>
         </Box>
@@ -252,13 +234,8 @@ export default function PagesPage() {
                 <TableRow key={p.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                   <TableCell sx={{ py: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                      <Avatar sx={{ width: 30, height: 30, bgcolor: pageColor(p.id), fontSize: 13, fontWeight: 700 }}>
-                        {p.name
-                          .split(' ')
-                          .map((w) => w[0])
-                          .slice(0, 2)
-                          .join('')
-                          .toUpperCase()}
+                      <Avatar sx={{ width: 30, height: 30, bgcolor: avatarColor(p.name), fontSize: 13, fontWeight: 700 }}>
+                        {initials(p.name)}
                       </Avatar>
                       <Typography sx={{ fontWeight: 600, fontSize: 13.5 }}>{p.name}</Typography>
                     </Box>
@@ -513,7 +490,7 @@ export default function PagesPage() {
           <Button
             variant="contained"
             color="error"
-            startIcon={removePageMutation.isPending ? <Skeleton variant="circular" width={14} height={14} /> : <DeleteOutline fontSize="small" />}
+            startIcon={removePageMutation.isPending ? <CircularProgress size={14} /> : <DeleteOutline fontSize="small" />}
             onClick={() => confirmDelete && removePageMutation.mutate(confirmDelete.id)}
             disabled={removePageMutation.isPending}
           >

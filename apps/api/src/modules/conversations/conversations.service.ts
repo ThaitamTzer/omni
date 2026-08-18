@@ -1,43 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
-type ConversationRow = {
-  id: string;
-  pageId: string;
-  page: { id: string; name: string };
-  fbConversationId: string;
-  customerName: string;
-  customerFbId: string | null;
-  customerAvatar: string | null;
-  status: string;
-  aiEnabled: boolean;
-  assignedStaffId: string | null;
-  lastMessageAt: Date | null;
-  lastMessagePreview: string | null;
-  unreadCount: number;
-  deletedAt: Date | null;
-  updatedAt: Date;
-};
+type ConversationRow = Prisma.ConversationGetPayload<{
+  include: { page: { select: { id: true; name: true } } };
+}>;
 
 function toDto(c: ConversationRow) {
-  return {
-    id: c.id,
-    pageId: c.pageId,
-    pageName: c.page.name,
-    fbConversationId: c.fbConversationId,
-    customerName: c.customerName,
-    customerFbId: c.customerFbId,
-    customerAvatar: c.customerAvatar,
-    status: c.status,
-    aiEnabled: c.aiEnabled,
-    assignedStaffId: c.assignedStaffId,
-    lastMessageAt: c.lastMessageAt,
-    lastMessagePreview: c.lastMessagePreview,
-    unreadCount: c.unreadCount,
-    deletedAt: c.deletedAt,
-    updatedAt: c.updatedAt,
-  };
+  const { page, ...rest } = c;
+  return { ...rest, pageName: page.name };
 }
 
 @Injectable()
@@ -84,6 +56,14 @@ export class ConversationsService {
       where: { id: conversationId },
     });
     if (!conv || conv.deletedAt) throw new NotFoundException('Conversation not found');
+    return conv;
+  }
+
+  private async findAnyOrThrow(conversationId: string) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
     return conv;
   }
 
@@ -173,10 +153,7 @@ export class ConversationsService {
   }
 
   async restore(conversationId: string) {
-    const conv = await this.prisma.conversation.findUnique({
-      where: { id: conversationId },
-    });
-    if (!conv) throw new NotFoundException('Conversation not found');
+    await this.findAnyOrThrow(conversationId);
     const updated = await this.prisma.conversation.update({
       where: { id: conversationId },
       data: { deletedAt: null, unreadCount: 0 },

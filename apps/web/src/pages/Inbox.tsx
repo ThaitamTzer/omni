@@ -23,8 +23,6 @@ import {
   DialogContent,
   DialogActions,
   Divider,
-  Alert,
-  Snackbar,
   Checkbox,
 } from '@mui/material';
 import {
@@ -42,9 +40,8 @@ import { api, getToken } from '../lib/api';
 import { useStaff } from '../lib/authStore';
 import CustomerAvatar from '../components/CustomerAvatar';
 import EmptyState from '../components/EmptyState';
+import Toast from '../components/Toast';
 import type { ConversationDto, MessageDto } from '@omni/shared';
-
-const STATUS_LABEL: Record<string, string> = { open: 'open', pending: 'needsHelp', closed: 'closed' };
 
 function formatTime(d: string | Date | null): string {
   if (!d) return '';
@@ -196,37 +193,28 @@ export default function Inbox() {
   });
 
   // ---- Bulk mutations ----
+  const bulkDone = (msgFn: (count: number) => string, extra?: () => void) => (_data: unknown, ids: string[]) => {
+    showMsg(msgFn(ids.length));
+    invalidateConversations();
+    queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+    setSelectedIds(new Set());
+    setSelectedId(null);
+    extra?.();
+  };
+
   const bulkSoftDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post(`/conversations/bulk/delete`, { ids }),
-    onSuccess: (_data, ids) => {
-      showMsg(t('inbox.deletedBulk', { count: ids.length }));
-      invalidateConversations();
-      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
-      setSelectedIds(new Set());
-      setSelectedId(null);
-    },
+    onSuccess: bulkDone((n) => t('inbox.deletedBulk', { count: n })),
   });
 
   const bulkRestoreMutation = useMutation({
     mutationFn: (ids: string[]) => api.post(`/conversations/bulk/restore`, { ids }),
-    onSuccess: (_data, ids) => {
-      showMsg(t('inbox.restoredBulk', { count: ids.length }));
-      invalidateConversations();
-      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
-      setSelectedIds(new Set());
-      setSelectedId(null);
-    },
+    onSuccess: bulkDone((n) => t('inbox.restoredBulk', { count: n })),
   });
 
   const bulkPermanentDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post(`/conversations/bulk/permanent-delete`, { ids }),
-    onSuccess: (_data, ids) => {
-      showMsg(t('inbox.permanentlyDeletedBulk', { count: ids.length }));
-      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
-      setConfirmBulkDeleteForever(false);
-      setSelectedIds(new Set());
-      setSelectedId(null);
-    },
+    onSuccess: bulkDone((n) => t('inbox.permanentlyDeletedBulk', { count: n }), () => setConfirmBulkDeleteForever(false)),
   });
 
   const conversations = conversationsQuery.data ?? [];
@@ -256,7 +244,6 @@ export default function Inbox() {
       queryClient.setQueryData<ConversationDto[]>(['conversations'], (old) =>
         (old ?? []).filter((c) => c.id !== payload.conversationId),
       );
-      queryClient.setQueryData<ConversationDto[]>(['conversations', 'deleted'], (old) => old);
     });
 
     socket.on('conversation:restored', () => {
@@ -615,7 +602,7 @@ export default function Inbox() {
                     <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{selected.pageName}</Typography>
                     <Chip
                       size="small"
-                      label={t(`inbox.${STATUS_LABEL[selected.status]}`)}
+                      label={t(`inbox.${selected.status}`)}
                       color={statusChipColor(selected.status)}
                       sx={{ height: 20, fontSize: 11 }}
                     />
@@ -918,19 +905,7 @@ export default function Inbox() {
         </DialogActions>
       </Dialog>
 
-      <Snackbar
-        open={!!msg || !!msgError}
-        autoHideDuration={4000}
-        onClose={() => {
-          setMsg('');
-          setMsgError('');
-        }}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert severity={msgError ? 'error' : 'success'} variant="filled" onClose={() => { setMsg(''); setMsgError(''); }}>
-          {msgError || msg}
-        </Alert>
-      </Snackbar>
+      <Toast message={msg} error={msgError} onClose={() => { setMsg(''); setMsgError(''); }} />
     </Box>
   );
 }

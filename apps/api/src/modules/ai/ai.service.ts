@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { StrandsAgentService } from './strands/strands-agent.service';
 import { LangGraphWorkflow } from './langgraph/workflow';
 
@@ -16,6 +17,7 @@ export class AiService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
     private readonly strands: StrandsAgentService,
     private readonly workflow: LangGraphWorkflow,
   ) {}
@@ -32,7 +34,7 @@ export class AiService {
     if (!conversation || conversation.deletedAt || !conversation.aiEnabled) return;
 
     // --- Rate limit: global per-hour cap (across all pages) ---
-    const settings = await this.getAiSettings();
+    const settings = await this.settings.getAll();
     const maxPerHour = Number(settings.ai_max_replies_per_hour ?? 10);
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const repliesThisHour = await this.prisma.agentLog.count({
@@ -121,11 +123,6 @@ export class AiService {
         aiReplyWindowStart: windowStart && !windowExpired ? windowStart : new Date(),
       },
     });
-  }
-
-  private async getAiSettings() {
-    const rows = await this.prisma.setting.findMany();
-    return Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]));
   }
 
   private async logAgentEvent(conversationId: string, event: string, payload: unknown) {

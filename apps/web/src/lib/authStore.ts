@@ -34,6 +34,5 @@ export const useAuthStore = create<AuthState>()(
   ),
 );
 
-// Convenience selectors
+// Convenience selector
 export const useStaff = () => useAuthStore((s) => s.staff);
-export const useAccessToken = () => useAuthStore((s) => s.accessToken);

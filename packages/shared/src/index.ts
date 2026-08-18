@@ -4,8 +4,6 @@ export type SenderType = 'CUSTOMER' | 'AGENT' | 'STAFF' | 'SYSTEM';
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
 
-export type StaffRole = 'ADMIN' | 'AGENT';
-
 export interface Attachment {
   type: 'image' | 'video' | 'audio' | 'file' | 'sticker' | 'location';
   url?: string;
@@ -55,14 +53,6 @@ export interface PageDto {
   createdAt: Date;
 }
 
-export interface AgentLogDto {
-  id: string;
-  conversationId: string;
-  event: string;
-  payload: Record<string, unknown>;
-  createdAt: Date;
-}
-
 export interface AiRuleDto {
   id: string;
   name: string;
@@ -81,26 +71,4 @@ export interface FaqDto {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
-}
-
-export interface StaffDto {
-  id: string;
-  email: string;
-  name: string;
-  role: StaffRole;
-  createdAt: Date;
-}
-
-export interface SettingsDto {
-  key: string;
-  value: string;
-}
-
-export interface DashboardStats {
-  totalConversations: number;
-  openConversations: number;
-  pendingConversations: number;
-  totalMessages: number;
-  aiRepliesToday: number;
-  staffRepliesToday: number;
 }
