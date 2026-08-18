@@ -45,6 +45,7 @@ model Conversation {
   fbConversationId String
   customerName     String            @default("Khách hàng")
   customerFbId     String?
+  customerAvatar   String?
   status           ConversationStatus @default(open)
   aiEnabled        Boolean           @default(true)
   assignedStaffId  String?
@@ -54,6 +55,7 @@ model Conversation {
   unreadCount      Int               @default(0)
   aiReplyCount     Int               @default(0)
   aiReplyWindowStart DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -63,6 +65,7 @@ model Conversation {
   @@unique([pageId, fbConversationId])
   @@index([status])
   @@index([lastMessageAt])
+  @@index([deletedAt])
 }
 
 model Message {

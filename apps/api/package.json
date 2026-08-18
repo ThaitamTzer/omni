@@ -37,6 +37,7 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.0",
     "ioredis": "^5.4.0",
+    "openai": "^6.49.0",
     "passport-jwt": "^4.0.1",
     "socket.io": "^4.8.0",
     "vitest": "2.1.0",

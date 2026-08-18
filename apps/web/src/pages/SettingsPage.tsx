@@ -199,7 +199,7 @@ export default function SettingsPage() {
         sx={{
           p: 3.5,
           mb: 3,
-          borderRadius: 3,
+          borderRadius: 2,
           bgcolor: 'primary.main',
           color: '#fff',
           display: 'flex',
@@ -227,7 +227,7 @@ export default function SettingsPage() {
       <Grid container spacing={3}>
         {/* AI Rules */}
         <Grid item xs={12} lg={7}>
-          <Card elevation={0} sx={{ borderRadius: 2.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
                 <Avatar sx={{ width: 40, height: 40, bgcolor: '#ede9fe', color: 'secondary.main' }}>
@@ -299,7 +299,7 @@ export default function SettingsPage() {
 
         {/* AI Settings */}
         <Grid item xs={12} lg={5}>
-          <Card elevation={0} sx={{ borderRadius: 2.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
             <CardContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <Avatar sx={{ width: 40, height: 40, bgcolor: '#eff6ff', color: 'primary.main' }}>
@@ -344,7 +344,7 @@ export default function SettingsPage() {
 
         {/* FAQ */}
         <Grid item xs={12}>
-          <Card elevation={0} sx={{ borderRadius: 2.5, border: '1px solid', borderColor: 'divider' }}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
             <CardContent sx={{ p: 2.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
                 <Avatar sx={{ width: 40, height: 40, bgcolor: '#eff6ff', color: 'primary.main' }}>

@@ -35,12 +35,14 @@ export interface ConversationDto {
   fbConversationId: string;
   customerName: string;
   customerFbId: string | null;
+  customerAvatar: string | null;
   status: ConversationStatus;
   aiEnabled: boolean;
   assignedStaffId: string | null;
   lastMessageAt: Date | null;
   lastMessagePreview: string | null;
   unreadCount: number;
+  deletedAt: Date | null;
   updatedAt: Date;
 }
 

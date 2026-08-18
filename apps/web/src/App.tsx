@@ -20,7 +20,7 @@ import {
   ChatBubbleOutline,
   SettingsOutlined,
   Logout,
-  Storefront,
+  Search,
   Facebook,
 } from '@mui/icons-material';
 import { useAuthStore, useStaff } from './lib/authStore';
@@ -31,9 +31,12 @@ import Inbox from './pages/Inbox';
 import PagesPage from './pages/PagesPage';
 import SettingsPage from './pages/SettingsPage';
 
-const NAV_ITEMS = [
+const NAV_MAIN = [
   { to: '/', labelKey: 'nav.inbox', icon: <ChatBubbleOutline fontSize="small" />, end: true },
   { to: '/pages', labelKey: 'nav.pages', icon: <Facebook fontSize="small" />, end: false },
+];
+
+const NAV_SECONDARY = [
   { to: '/settings', labelKey: 'nav.settings', icon: <SettingsOutlined fontSize="small" />, end: false },
 ];
 
@@ -56,10 +59,10 @@ function Layout({ children }: { children: React.ReactNode }) {
       <Drawer
         variant="permanent"
         sx={{
-          width: 240,
+          width: 200,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
-            width: 240,
+            width: 200,
             boxSizing: 'border-box',
             border: 'none',
             borderRight: '1px solid',
@@ -68,22 +71,27 @@ function Layout({ children }: { children: React.ReactNode }) {
           },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 2.5 }}>
           <Avatar
             sx={{
-              width: 34,
-              height: 34,
+              width: 36,
+              height: 36,
               borderRadius: 2,
               bgcolor: 'primary.main',
-              fontSize: 17,
+              fontSize: 18,
             }}
             variant="rounded"
           >
             💬
           </Avatar>
-          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: 17 }}>
-            Omni Inbox
-          </Typography>
+          <Box>
+            <Typography sx={{ fontWeight: 700, fontSize: 16, lineHeight: 1.2 }}>
+              Omni Inbox
+            </Typography>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+              {t('app.tagline')}
+            </Typography>
+          </Box>
         </Box>
 
         <Box sx={{ px: 1.5, pb: 1 }}>
@@ -91,7 +99,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             {t('nav.inbox')}
           </Typography>
           <List disablePadding>
-            {NAV_ITEMS.map((item) => {
+            {NAV_MAIN.map((item) => {
               const active = isActive(item);
               return (
                 <ListItem key={item.to} disablePadding>
@@ -102,7 +110,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                     selected={active}
                     sx={{
                       mb: 0.5,
-                      borderRadius: 2,
+                      borderRadius: 1.5,
                       color: active ? '#fff' : 'text.secondary',
                       // Override MUI default selected style (specificity-safe)
                       '&.Mui-selected': {
@@ -129,6 +137,48 @@ function Layout({ children }: { children: React.ReactNode }) {
         </Box>
 
         <Box sx={{ flex: 1 }} />
+
+        {/* General group — separated like Donezo */}
+        <Box sx={{ px: 1.5, pb: 1 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'text.secondary', px: 1, pb: 0.5 }}>
+            General
+          </Typography>
+          <List disablePadding>
+            {NAV_SECONDARY.map((item) => {
+              const active = isActive(item);
+              return (
+                <ListItem key={item.to} disablePadding>
+                  <ListItemButton
+                    component={NavLink}
+                    to={item.to}
+                    end={item.end}
+                    selected={active}
+                    sx={{
+                      mb: 0.5,
+                      borderRadius: 1.5,
+                      color: active ? '#fff' : 'text.secondary',
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: '#fff',
+                        '&:hover': { bgcolor: 'primary.main' },
+                        '& .MuiListItemIcon-root': { color: '#fff' },
+                        '& .MuiListItemText-primary': { fontWeight: 600 },
+                      },
+                      '&:hover': {
+                        bgcolor: active ? 'primary.main' : 'action.hover',
+                        color: active ? '#fff' : 'text.primary',
+                      },
+                      '& .MuiListItemIcon-root': { color: active ? '#fff' : 'inherit' },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 34 }}>{item.icon}</ListItemIcon>
+                    <ListItemText primary={t(item.labelKey)} primaryTypographyProps={{ fontSize: 14 }} />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
+        </Box>
 
         <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <InitialsAvatar name={staff.name} size={34} />
@@ -167,12 +217,41 @@ function Layout({ children }: { children: React.ReactNode }) {
           elevation={0}
           sx={{ bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider', color: 'text.primary' }}
         >
-          <Toolbar sx={{ minHeight: 56, px: 2.5 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
-              <Storefront fontSize="small" sx={{ color: 'text.secondary' }} />
+          <Toolbar sx={{ minHeight: 60, px: 3, gap: 2 }}>
+            <Typography sx={{ fontSize: 18, fontWeight: 700, flexShrink: 0 }}>
+              {t('inbox.title')}
+            </Typography>
+            <Box
+              sx={{
+                flex: 1,
+                maxWidth: 420,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 1.5,
+                py: 0.75,
+                bgcolor: 'background.default',
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Search fontSize="small" sx={{ color: 'text.secondary' }} />
               <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                {t('app.tagline')}
+                {t('inbox.search')}
               </Typography>
+            </Box>
+            <Box sx={{ flex: 1 }} />
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <InitialsAvatar name={staff.name} size={36} />
+              <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>
+                  {staff.name}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                  {staff.role === 'ADMIN' ? t('nav.admin') : t('nav.staff')}
+                </Typography>
+              </Box>
             </Stack>
           </Toolbar>
         </AppBar>

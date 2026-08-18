@@ -33,6 +33,15 @@ export class MessageService {
       where: { pageId_fbConversationId: { pageId: page.id, fbConversationId: msg.customerFbId } },
     });
 
+    if (conversation?.deletedAt) {
+      // Customer came back to a soft-deleted conversation — bring it back to the inbox.
+      conversation = await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { deletedAt: null, unreadCount: 0 },
+      });
+      this.realtime.emitConversationRestored(conversation.id);
+    }
+
     if (!conversation) {
       conversation = await this.prisma.conversation.create({
         data: {
@@ -62,6 +71,13 @@ export class MessageService {
       },
     });
 
+    // Fetch the customer's real name + avatar for new conversations (or ones
+    // still showing the placeholder "Khách XXXX"). Failures keep the placeholder.
+    const needsProfile = !conversation.customerName || conversation.customerName.startsWith('Khách ');
+    const profile = needsProfile && conversation.customerFbId
+      ? await this.messenger.fetchCustomerProfile(conversation.customerFbId, page.id)
+      : { name: null, avatar: null };
+
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -69,6 +85,8 @@ export class MessageService {
         lastMessagePreview: text.slice(0, 160) || '[Hình ảnh/tệp]',
         ...(isEcho ? {} : { unreadCount: { increment: 1 } }),
         status: conversation.status === 'closed' ? 'open' : conversation.status,
+        ...(profile.name ? { customerName: profile.name } : {}),
+        ...(profile.avatar ? { customerAvatar: profile.avatar } : {}),
       },
     });
 
@@ -106,7 +124,7 @@ export class MessageService {
       where: { id: conversationId },
       include: { page: true },
     });
-    if (!conversation || !conversation.customerFbId) throw new Error('Conversation not found');
+    if (!conversation || conversation.deletedAt || !conversation.customerFbId) throw new Error('Conversation not found');
     if (!text?.trim()) throw new Error('Message text is required');
 
     const messageId = await this.messenger.sendText(conversation.pageId, conversation.customerFbId, text);

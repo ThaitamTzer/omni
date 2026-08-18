@@ -51,6 +51,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     this.server?.emit('conversation:update', { conversationId, ...(payload as object) });
   }
 
+  emitConversationDeleted(conversationId: string) {
+    this.server?.emit('conversation:deleted', { conversationId });
+  }
+
+  emitConversationRestored(conversationId: string) {
+    this.server?.emit('conversation:restored', { conversationId });
+  }
+
   emitNewMessage(conversationId: string, message: unknown) {
     this.server?.emit('message:new', { conversationId, message });
   }

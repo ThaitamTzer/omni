@@ -147,7 +147,7 @@ export default function PagesPage() {
         sx={{
           p: 3.5,
           mb: 3,
-          borderRadius: 3,
+          borderRadius: 2,
           bgcolor: 'primary.main',
           color: '#fff',
           display: 'flex',
@@ -214,7 +214,7 @@ export default function PagesPage() {
         <Grid container spacing={2}>
           {[0, 1, 2].map((i) => (
             <Grid item xs={12} sm={6} md={4} key={i}>
-              <Card elevation={0} sx={{ borderRadius: 2.5 }}>
+              <Card elevation={0} sx={{ borderRadius: 1.5 }}>
                 <CardContent>
                   <Skeleton variant="circular" width={48} height={48} />
                   <Skeleton width="60%" sx={{ mt: 1.5 }} />
@@ -225,7 +225,7 @@ export default function PagesPage() {
           ))}
         </Grid>
       ) : pages.length === 0 ? (
-        <Card elevation={0} sx={{ borderRadius: 2.5 }}>
+        <Card elevation={0} sx={{ borderRadius: 1.5 }}>
           <CardContent sx={{ textAlign: 'center', py: 7 }}>
             <Avatar sx={{ width: 72, height: 72, mx: 'auto', mb: 2, bgcolor: '#f0f2f5', color: 'text.secondary', fontSize: 36 }}>
               <Facebook />
@@ -246,7 +246,7 @@ export default function PagesPage() {
               <Card
                 elevation={0}
                 sx={{
-                  borderRadius: 2.5,
+                  borderRadius: 1.5,
                   border: '1px solid',
                   borderColor: 'divider',
                   transition: 'box-shadow 0.2s, transform 0.2s',
@@ -330,7 +330,7 @@ export default function PagesPage() {
         sx={{
           mt: 3,
           p: 2,
-          borderRadius: 2.5,
+          borderRadius: 1.5,
           bgcolor: '#f8f9fb',
           border: '1px dashed',
           borderColor: 'divider',

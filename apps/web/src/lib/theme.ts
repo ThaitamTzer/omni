@@ -15,17 +15,18 @@ declare module '@mui/material/styles' {
 export const theme = createTheme({
   palette: {
     mode: 'light',
-    // Primary: operational blue — inbox/messaging domain, per user direction
+    // Primary: operational blue — inbox/messaging domain (kept per user direction)
     primary: { main: '#2563eb', dark: '#1d4ed8', light: '#60a5fa', contrastText: '#ffffff' },
     // Secondary: reserved exclusively for AI state
     secondary: { main: '#6d28d9', dark: '#5b21b6' },
     info: { main: '#0288d1', dark: '#01579b' },
-    background: { default: '#f4f6fb', paper: '#ffffff', surface2: '#f8fafc' },
-    text: { primary: '#1e293b', secondary: '#64748b' },
-    divider: '#e2e8f0',
+    success: { main: '#22c55e' },
+    background: { default: '#f3f4f6', paper: '#ffffff', surface2: '#f9fafb' },
+    text: { primary: '#111827', secondary: '#6b7280' },
+    divider: '#e5e7eb',
     custom: { staffBubble: '#111827' },
   },
-  shape: { borderRadius: 10 },
+  shape: { borderRadius: 8 },
   typography: {
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
@@ -42,7 +43,7 @@ export const theme = createTheme({
     },
     MuiButton: {
       defaultProps: { disableElevation: true },
-      styleOverrides: { root: { borderRadius: 8 } },
+      styleOverrides: { root: { borderRadius: 6 } },
     },
     MuiPaper: {
       styleOverrides: { root: ({ theme }) => ({ border: `1px solid ${theme.palette.divider}` }) },
@@ -51,7 +52,7 @@ export const theme = createTheme({
       styleOverrides: { root: { fontWeight: 600 } },
     },
     MuiListItemButton: {
-      styleOverrides: { root: { borderRadius: 8, marginBottom: 2 } },
+      styleOverrides: { root: { borderRadius: 6, marginBottom: 2 } },
     },
   },
 });

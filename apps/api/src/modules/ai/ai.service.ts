@@ -29,7 +29,7 @@ export class AiService {
       where: { id: conversationId },
       include: { page: true },
     });
-    if (!conversation || !conversation.aiEnabled) return;
+    if (!conversation || conversation.deletedAt || !conversation.aiEnabled) return;
 
     // --- Rate limit: global per-hour cap (across all pages) ---
     const settings = await this.getAiSettings();

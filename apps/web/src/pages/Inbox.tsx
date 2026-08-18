@@ -19,6 +19,14 @@ import {
   Tabs,
   Tab,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider,
+  Alert,
+  Snackbar,
+  Checkbox,
 } from '@mui/material';
 import {
   Search,
@@ -26,11 +34,14 @@ import {
   SmartToy,
   PersonAdd,
   Close,
+  DeleteOutline,
+  DeleteForever,
+  RestoreFromTrash,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, getToken } from '../lib/api';
 import { useStaff } from '../lib/authStore';
-import InitialsAvatar from '../components/InitialsAvatar';
+import CustomerAvatar from '../components/CustomerAvatar';
 import EmptyState from '../components/EmptyState';
 import type { ConversationDto, MessageDto } from '@omni/shared';
 
@@ -64,13 +75,29 @@ export default function Inbox() {
   const [typing, setTyping] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
+  const [confirmDeleteForever, setConfirmDeleteForever] = useState<ConversationDto | null>(null);
+  const [confirmBulkDeleteForever, setConfirmBulkDeleteForever] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [msg, setMsg] = useState('');
+  const [msgError, setMsgError] = useState('');
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const showMsg = (ok: string, err?: unknown) => {
+    setMsg(ok);
+    setMsgError(err ? `Lỗi: ${(err as Error).message}` : '');
+  };
 
   // ---- TanStack Query ----
   const conversationsQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: () => api.get<ConversationDto[]>('/conversations'),
+  });
+
+  const deletedQuery = useQuery({
+    queryKey: ['conversations', 'deleted'],
+    queryFn: () => api.get<ConversationDto[]>('/conversations/deleted'),
+    enabled: tab === 'deleted',
   });
 
   const messagesQuery = useQuery({
@@ -129,9 +156,74 @@ export default function Inbox() {
     onSuccess: () => invalidateConversations(),
   });
 
+  const softDeleteMutation = useMutation({
+    mutationFn: (conversationId: string) => api.del(`/conversations/${conversationId}`),
+    onSuccess: (_data, conversationId) => {
+      showMsg(t('inbox.deleted'));
+      invalidateConversations();
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setSelectedId((cur) => (cur === conversationId ? null : cur));
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (conversationId: string) => api.post(`/conversations/${conversationId}/restore`, {}),
+    onSuccess: () => {
+      showMsg(t('inbox.restored'));
+      invalidateConversations();
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setSelectedId(null);
+    },
+  });
+
+  const permanentDeleteMutation = useMutation({
+    mutationFn: (conversationId: string) => api.del(`/conversations/${conversationId}/permanent`),
+    onSuccess: () => {
+      showMsg(t('inbox.permanentlyDeleted'));
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setConfirmDeleteForever(null);
+      setSelectedId(null);
+    },
+  });
+
+  // ---- Bulk mutations ----
+  const bulkSoftDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post(`/conversations/bulk/delete`, { ids }),
+    onSuccess: (_data, ids) => {
+      showMsg(t('inbox.deletedBulk', { count: ids.length }));
+      invalidateConversations();
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setSelectedIds(new Set());
+      setSelectedId(null);
+    },
+  });
+
+  const bulkRestoreMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post(`/conversations/bulk/restore`, { ids }),
+    onSuccess: (_data, ids) => {
+      showMsg(t('inbox.restoredBulk', { count: ids.length }));
+      invalidateConversations();
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setSelectedIds(new Set());
+      setSelectedId(null);
+    },
+  });
+
+  const bulkPermanentDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post(`/conversations/bulk/permanent-delete`, { ids }),
+    onSuccess: (_data, ids) => {
+      showMsg(t('inbox.permanentlyDeletedBulk', { count: ids.length }));
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
+      setConfirmBulkDeleteForever(false);
+      setSelectedIds(new Set());
+      setSelectedId(null);
+    },
+  });
+
   const conversations = conversationsQuery.data ?? [];
   const messages = messagesQuery.data ?? [];
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const deletedConversations = deletedQuery.data ?? [];
+  const selected = (tab === 'deleted' ? deletedConversations : conversations).find((c) => c.id === selectedId) ?? null;
 
   // ---- Realtime socket (updates query cache) ----
   useEffect(() => {
@@ -140,14 +232,39 @@ export default function Inbox() {
     socketRef.current = socket;
 
     socket.on('conversation:update', (payload: { conversationId: string }) => {
+      queryClient.setQueryData<ConversationDto[]>(['conversations'], (old) => {
+        const list = old ?? [];
+        if (!list.some((c) => c.id === payload.conversationId)) {
+          // Unknown conversation (e.g. newly created) — pull the full list
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          return list;
+        }
+        return list.map((c) => (c.id === payload.conversationId ? { ...c, ...payload } : c));
+      });
+    });
+
+    socket.on('conversation:deleted', (payload: { conversationId: string }) => {
       queryClient.setQueryData<ConversationDto[]>(['conversations'], (old) =>
-        (old ?? []).map((c) => (c.id === payload.conversationId ? { ...c, ...payload } : c)),
+        (old ?? []).filter((c) => c.id !== payload.conversationId),
       );
+      queryClient.setQueryData<ConversationDto[]>(['conversations', 'deleted'], (old) => old);
+    });
+
+    socket.on('conversation:restored', () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', 'deleted'] });
     });
 
     socket.on('message:new', (payload: { conversationId: string; message: MessageDto }) => {
-      queryClient.setQueryData<ConversationDto[]>(['conversations'], (old) =>
-        (old ?? []).map((c) =>
+      queryClient.setQueryData<ConversationDto[]>(['conversations'], (old) => {
+        const list = old ?? [];
+        const exists = list.some((c) => c.id === payload.conversationId);
+        if (!exists) {
+          // New conversation arrived — refetch so we get the full DTO (pageName, etc.)
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          return list;
+        }
+        return list.map((c) =>
           c.id === payload.conversationId
             ? {
                 ...c,
@@ -155,8 +272,8 @@ export default function Inbox() {
                 lastMessageAt: payload.message.createdAt,
               }
             : c,
-        ),
-      );
+        );
+      });
       queryClient.setQueryData<MessageDto[]>(['messages', payload.conversationId], (old) =>
         old && old.some((m) => m.id === payload.message.id) ? old : [...(old ?? []), payload.message],
       );
@@ -177,6 +294,12 @@ export default function Inbox() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  // Clear selection when switching tabs (list contents change entirely)
+  useEffect(() => {
+    setSelectedId(null);
+    setSelectedIds(new Set());
+  }, [tab]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -199,22 +322,43 @@ export default function Inbox() {
         (c.lastMessagePreview ?? '').toLowerCase().includes(search.toLowerCase()),
     );
 
-  const listLoading = conversationsQuery.isLoading;
+  const listLoading = tab === 'deleted' ? deletedQuery.isLoading : conversationsQuery.isLoading;
+  const listItems = tab === 'deleted' ? deletedConversations : filtered;
+
+  // ---- Multi-select helpers ----
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const ids = listItems.map((c) => c.id);
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
+      if (allSelected) return new Set<string>();
+      return new Set(ids);
+    });
+  };
+
+  const selectedCount = selectedIds.size;
+  const allSelected = listItems.length > 0 && listItems.every((c) => selectedIds.has(c.id));
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 57px)' }}>
+    <Box sx={{ display: 'flex', gap: 2, p: 2, height: 'calc(100vh - 76px)', minHeight: 0 }}>
       {/* Conversation list */}
       <Paper
         elevation={0}
         sx={{
           width: 340,
           flexShrink: 0,
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 0,
+          borderRadius: 2,
           display: 'flex',
           flexDirection: 'column',
-          height: '100%',
+          overflow: 'hidden',
         }}
       >
         <Box sx={{ p: 1.5 }}>
@@ -235,30 +379,89 @@ export default function Inbox() {
           />
         </Box>
 
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 1.5, minHeight: 40, '& .MuiTab-root': { minHeight: 36, fontSize: 13, fontWeight: 600 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 1, minHeight: 36 }}>
+          <Checkbox
+            size="small"
+            checked={allSelected}
+            indeterminate={selectedCount > 0 && !allSelected}
+            onChange={toggleSelectAll}
+            disabled={listItems.length === 0}
+            title={t('inbox.selectAll')}
+            sx={{ p: 0.5 }}
+          />
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+            {selectedCount > 0 ? t('inbox.selected', { count: selectedCount }) : t('inbox.selectAll')}
+          </Typography>
+        </Box>
+
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
+          sx={{ px: 1.5, minHeight: 40, '& .MuiTab-root': { minHeight: 36, fontSize: 13, fontWeight: 600 }, '& .MuiTabs-scrollButtons': { width: 24, '&.Mui-disabled': { opacity: 0.3 } } }}
+        >
           <Tab label={t('inbox.all')} value="all" />
           <Tab label={t('inbox.needsHelp')} value="pending" />
           <Tab label={t('inbox.open')} value="open" />
+          <Tab label={t('inbox.trash')} value="deleted" />
         </Tabs>
+
+        {selectedCount > 0 && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, bgcolor: 'primary.main', color: '#fff' }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0 }}>
+              {t('inbox.selected', { count: selectedCount })}
+            </Typography>
+            {tab === 'deleted' ? (
+              <>
+                <Button size="small" variant="text" sx={{ color: '#fff', fontSize: 12 }} startIcon={<RestoreFromTrash fontSize="small" />} onClick={() => bulkRestoreMutation.mutate([...selectedIds])} disabled={bulkRestoreMutation.isPending}>
+                  {t('inbox.bulkRestore')}
+                </Button>
+                <Button size="small" variant="text" sx={{ color: '#fff', fontSize: 12 }} startIcon={<DeleteForever fontSize="small" />} onClick={() => setConfirmBulkDeleteForever(true)} disabled={bulkPermanentDeleteMutation.isPending}>
+                  {t('inbox.bulkDeleteForever')}
+                </Button>
+              </>
+            ) : (
+              <Button size="small" variant="text" sx={{ color: '#fff', fontSize: 12 }} startIcon={<DeleteOutline fontSize="small" />} onClick={() => bulkSoftDeleteMutation.mutate([...selectedIds])} disabled={bulkSoftDeleteMutation.isPending}>
+                {t('inbox.bulkDelete')}
+              </Button>
+            )}
+            <IconButton size="small" sx={{ color: '#fff' }} onClick={() => setSelectedIds(new Set())}>
+              <Close fontSize="small" />
+            </IconButton>
+          </Box>
+        )}
 
         <Box sx={{ flex: 1, overflowY: 'auto' }}>
           {listLoading ? (
             <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
               <CircularProgress size={28} />
             </Box>
-          ) : filtered.length === 0 ? (
-            <EmptyState icon="💬" title={search ? t('inbox.notFoundSearch') : t('inbox.noConversations')} hint={search ? t('inbox.notFoundSearchDesc') : t('inbox.noConversationsDesc')} />
+          ) : listItems.length === 0 ? (
+            <EmptyState
+              icon={tab === 'deleted' ? '🗑️' : '💬'}
+              title={tab === 'deleted' ? t('inbox.trashEmpty') : search ? t('inbox.notFoundSearch') : t('inbox.noConversations')}
+              hint={tab === 'deleted' ? t('inbox.trashEmptyDesc') : search ? t('inbox.notFoundSearchDesc') : t('inbox.noConversationsDesc')}
+            />
           ) : (
             <List disablePadding>
-              {filtered.map((c) => (
+              {listItems.map((c) => (
                 <ListItemButton
                   key={c.id}
                   selected={c.id === selectedId}
                   onClick={() => setSelectedId(c.id)}
-                  sx={{ px: 1.5, py: 1.25, borderBottom: '1px solid', borderColor: 'divider', borderRadius: 0 }}
+                  sx={{ mx: 1, my: 0.25, px: 1, py: 1.25, borderRadius: 1.5, '& .conv-delete': { opacity: 0, transition: 'opacity 0.15s' }, '&:hover .conv-delete': { opacity: 1 } }}
                 >
+                  <Checkbox
+                    size="small"
+                    checked={selectedIds.has(c.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelect(c.id)}
+                    sx={{ p: 0.5, mr: 0.5 }}
+                  />
                   <ListItemAvatar sx={{ minWidth: 46 }}>
-                    <InitialsAvatar name={c.customerName} />
+                    <CustomerAvatar name={c.customerName} avatar={c.customerAvatar} size={40} />
                   </ListItemAvatar>
                   <ListItemText
                     disableTypography
@@ -313,6 +516,52 @@ export default function Inbox() {
                       </Box>
                     }
                   />
+                  {tab === 'deleted' ? (
+                    <Stack direction="row" spacing={0.25} className="conv-delete" sx={{ ml: 0.5 }}>
+                      <Tooltip title={t('inbox.restore')}>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            restoreMutation.mutate(c.id);
+                          }}
+                          disabled={restoreMutation.isPending}
+                        >
+                          <RestoreFromTrash fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title={t('inbox.deleteForever')}>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteForever(c);
+                          }}
+                          disabled={permanentDeleteMutation.isPending}
+                        >
+                          <DeleteForever fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  ) : (
+                    <Tooltip title={t('inbox.deleteConversation')}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        className="conv-delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          softDeleteMutation.mutate(c.id);
+                        }}
+                        disabled={softDeleteMutation.isPending}
+                        sx={{ ml: 0.5 }}
+                      >
+                        <DeleteOutline fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </ListItemButton>
               ))}
             </List>
@@ -321,15 +570,20 @@ export default function Inbox() {
       </Paper>
 
       {/* Chat pane */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <Paper
+        elevation={0}
+        sx={{ flex: 1, minWidth: 0, borderRadius: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      >
         {!selected ? (
-          <EmptyState icon="💬" title={t('inbox.selectConversation')} hint={t('inbox.selectConversationDesc')} />
+          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <EmptyState icon="💬" title={t('inbox.selectConversation')} hint={t('inbox.selectConversationDesc')} />
+          </Box>
         ) : (
           <>
             {/* Chat header */}
             <Box sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
-                <InitialsAvatar name={selected.customerName} />
+                <CustomerAvatar name={selected.customerName} avatar={selected.customerAvatar} size={40} />
                 <Box sx={{ minWidth: 0 }}>
                   <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{selected.customerName}</Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
@@ -344,31 +598,59 @@ export default function Inbox() {
                 </Box>
               </Box>
               <Stack direction="row" spacing={1}>
-                <Tooltip title={selected.aiEnabled ? t('inbox.aiEnabled') : t('inbox.aiDisabled')}>
-                  <Button
-                    size="small"
-                    variant={selected.aiEnabled ? 'contained' : 'outlined'}
-                    startIcon={toggleAiMutation.isPending ? <CircularProgress size={14} /> : <SmartToy fontSize="small" />}
-                    onClick={() => toggleAiMutation.mutate({ conversationId: selected.id, enabled: !selected.aiEnabled })}
-                    color={selected.aiEnabled ? 'secondary' : 'primary'}
-                    disabled={toggleAiMutation.isPending}
-                  >
-                    AI {selected.aiEnabled ? t('inbox.aiOn') : t('inbox.aiOff')}
-                  </Button>
-                </Tooltip>
-                {selected.aiEnabled && (
-                  <Tooltip title={t('inbox.takeOver')}>
-                    <Button size="small" variant="outlined" startIcon={<PersonAdd fontSize="small" />} onClick={() => takeOverMutation.mutate(selected.id)} disabled={takeOverMutation.isPending}>
-                      {t('inbox.takeOver')}
-                    </Button>
-                  </Tooltip>
-                )}
-                {selected.status !== 'closed' && (
-                  <Tooltip title={t('inbox.conversationClosed')}>
-                    <IconButton size="small" onClick={() => closeConvMutation.mutate(selected.id)} disabled={closeConvMutation.isPending}>
-                      <Close fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                {selected.deletedAt ? (
+                  <>
+                    <Tooltip title={t('inbox.restore')}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<RestoreFromTrash fontSize="small" />}
+                        onClick={() => restoreMutation.mutate(selected.id)}
+                        disabled={restoreMutation.isPending}
+                      >
+                        {t('inbox.restore')}
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title={t('inbox.deleteForever')}>
+                      <IconButton size="small" color="error" onClick={() => setConfirmDeleteForever(selected)} disabled={permanentDeleteMutation.isPending}>
+                        <DeleteForever fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <Tooltip title={selected.aiEnabled ? t('inbox.aiEnabled') : t('inbox.aiDisabled')}>
+                      <Button
+                        size="small"
+                        variant={selected.aiEnabled ? 'contained' : 'outlined'}
+                        startIcon={toggleAiMutation.isPending ? <CircularProgress size={14} /> : <SmartToy fontSize="small" />}
+                        onClick={() => toggleAiMutation.mutate({ conversationId: selected.id, enabled: !selected.aiEnabled })}
+                        color={selected.aiEnabled ? 'secondary' : 'primary'}
+                        disabled={toggleAiMutation.isPending}
+                      >
+                        AI {selected.aiEnabled ? t('inbox.aiOn') : t('inbox.aiOff')}
+                      </Button>
+                    </Tooltip>
+                    {selected.aiEnabled && (
+                      <Tooltip title={t('inbox.takeOver')}>
+                        <Button size="small" variant="outlined" startIcon={<PersonAdd fontSize="small" />} onClick={() => takeOverMutation.mutate(selected.id)} disabled={takeOverMutation.isPending}>
+                          {t('inbox.takeOver')}
+                        </Button>
+                      </Tooltip>
+                    )}
+                    {selected.status !== 'closed' && (
+                      <Tooltip title={t('inbox.conversationClosed')}>
+                        <IconButton size="small" onClick={() => closeConvMutation.mutate(selected.id)} disabled={closeConvMutation.isPending}>
+                          <Close fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip title={t('inbox.deleteConversation')}>
+                      <IconButton size="small" color="error" onClick={() => softDeleteMutation.mutate(selected.id)} disabled={softDeleteMutation.isPending}>
+                        <DeleteOutline fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
                 )}
               </Stack>
             </Box>
@@ -400,7 +682,7 @@ export default function Inbox() {
                         maxWidth: '68%',
                         px: 1.5,
                         py: 1,
-                        borderRadius: 2,
+                        borderRadius: 1.5,
                         bgcolor: isCustomer ? 'background.paper' : isStaff ? 'custom.staffBubble' : 'secondary.main',
                         color: isCustomer ? 'text.primary' : '#fff',
                         borderBottomLeftRadius: isCustomer ? 3 : 10,
@@ -462,23 +744,106 @@ export default function Inbox() {
             </Box>
 
             {/* Input */}
-            <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1, bgcolor: 'background.paper' }}>
-              <TextField
-                size="small"
-                placeholder={t('inbox.typeMessage')}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                fullWidth
-                sx={{ bgcolor: 'background.default' }}
-              />
-              <Button variant="contained" onClick={sendMessage} disabled={!draft.trim() || sendMessageMutation.isPending} sx={{ minWidth: 90 }}>
-                {sendMessageMutation.isPending ? t('inbox.sending') : (<><Send fontSize="small" sx={{ mr: 0.5 }} /> {t('inbox.send')}</>)}
-              </Button>
-            </Box>
+            {!selected.deletedAt && (
+              <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1, bgcolor: 'background.paper' }}>
+                <TextField
+                  size="small"
+                  placeholder={t('inbox.typeMessage')}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                  fullWidth
+                  sx={{ bgcolor: 'background.default' }}
+                />
+                <Button variant="contained" onClick={sendMessage} disabled={!draft.trim() || sendMessageMutation.isPending} sx={{ minWidth: 90 }}>
+                  {sendMessageMutation.isPending ? t('inbox.sending') : (<><Send fontSize="small" sx={{ mr: 0.5 }} /> {t('inbox.send')}</>)}
+                </Button>
+              </Box>
+            )}
           </>
         )}
-      </Box>
+      </Paper>
+
+      {/* Delete forever confirmation dialog */}
+      <Dialog open={!!confirmDeleteForever} onClose={() => setConfirmDeleteForever(null)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteForever color="error" />
+            <Typography sx={{ fontWeight: 700 }}>{t('inbox.deleteForeverConfirmTitle')}</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setConfirmDeleteForever(null)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          {confirmDeleteForever && (
+            <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+              {confirmDeleteForever.customerName}
+            </Typography>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            {t('inbox.deleteForeverConfirmDesc')}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setConfirmDeleteForever(null)}>{t('pages.cancel')}</Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={permanentDeleteMutation.isPending ? <CircularProgress size={14} /> : <DeleteForever fontSize="small" />}
+            onClick={() => confirmDeleteForever && permanentDeleteMutation.mutate(confirmDeleteForever.id)}
+            disabled={permanentDeleteMutation.isPending}
+          >
+            {t('inbox.deleteForever')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk delete forever confirmation dialog */}
+      <Dialog open={confirmBulkDeleteForever} onClose={() => setConfirmBulkDeleteForever(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteForever color="error" />
+            <Typography sx={{ fontWeight: 700 }}>{t('inbox.bulkDeleteForeverConfirmTitle', { count: selectedCount })}</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setConfirmBulkDeleteForever(false)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <Divider />
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {t('inbox.bulkDeleteForeverConfirmDesc', { count: selectedCount })}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setConfirmBulkDeleteForever(false)}>{t('pages.cancel')}</Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={bulkPermanentDeleteMutation.isPending ? <CircularProgress size={14} /> : <DeleteForever fontSize="small" />}
+            onClick={() => bulkPermanentDeleteMutation.mutate([...selectedIds])}
+            disabled={bulkPermanentDeleteMutation.isPending || selectedCount === 0}
+          >
+            {t('inbox.bulkDeleteForever')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={!!msg || !!msgError}
+        autoHideDuration={4000}
+        onClose={() => {
+          setMsg('');
+          setMsgError('');
+        }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert severity={msgError ? 'error' : 'success'} variant="filled" onClose={() => { setMsg(''); setMsgError(''); }}>
+          {msgError || msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
