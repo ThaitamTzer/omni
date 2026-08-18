@@ -111,20 +111,23 @@ Dashboard → **Cài đặt** → **Thêm Page mới** (kết nối thủ công)
 ## AI Pipeline
 
 ### LangGraph (`apps/api/src/modules/ai/langgraph/`)
-- **State**: `{ conversationId, history, intent, confidence, action }`
-- **Nodes**: `classify` (rule-based keywords, tiếng Việt) → `decide` (reply/escalate)
+- **State**: `{ conversationId, history, settings, aiRules, intent, confidence, action, replyText }`
+- **Nodes**: `ruleMatch` (AiRule: keyword → template) → `classify` (rule-based keywords, tiếng Việt) → `decide` (reply/escalate)
 - Escalate khi: khiếu nại/phàn nàn, yêu cầu nhạy cảm, intent không rõ (confidence < 0.7)
+- AiRule khớp keywords → dùng `responseTemplate` trực tiếp (không tốn LLM)
 
 ### Strands Agent (`apps/api/src/modules/ai/strands/`)
-- `OpenAIModel` + tools: `lookup_product`, `lookup_order`, `lookup_faq`
-- Mỗi conversation giữ agent riêng (ngữ cảnh nhiều lượt), giới hạn 500 agent
+- `OpenAIModel` + tools: `lookup_product` (Product), `lookup_order` (Order), `lookup_faq` (FAQ) — **tra cứu DB thật**
+- Mỗi conversation giữ agent riêng (ngữ cảnh nhiều lượt), giới hạn 500 agent, evict theo LRU
+- History seed phân biệt role (customer → user, bot/staff → assistant)
 - System prompt tiếng Việt, tone lấy từ Settings (`ai_tone`)
+- Mọi tool call ghi `AgentLog` event `tool_lookup`
 
 ### Safety
-- Mọi quyết định AI ghi vào `AgentLog` (audit)
+- Mọi quyết định AI ghi vào `AgentLog` (audit) — xem qua `GET /api/agent-logs?conversationId=`
 - `ai_max_replies_per_hour` giới hạn tốc độ trả lời
 - Nhân viên có thể **tắt AI** hoặc **tiếp quản** từng hội thoại
-- Không OPENAI_API_KEY → tự động escalate (an toàn mặc định)
+- Không OPENAI_API_KEY → nhánh LLM escalate (an toàn mặc định); AiRule template vẫn chạy được
 
 ## API chính
 

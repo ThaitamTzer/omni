@@ -8,6 +8,7 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { PagesModule } from './modules/pages/pages.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { AgentLogsModule } from './modules/agent-logs/agent-logs.module';
 import { AiModule } from './modules/ai/ai.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { QueueModule } from './modules/queue/queue.module';
@@ -27,6 +28,7 @@ import { JwtAuthGuard } from './common/jwt-auth.guard';
     PagesModule,
     StaffModule,
     SettingsModule,
+    AgentLogsModule,
     AiModule,
   ],
   providers: [

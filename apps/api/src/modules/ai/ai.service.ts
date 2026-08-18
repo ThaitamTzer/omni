@@ -72,7 +72,8 @@ export class AiService {
       take: 40,
     });
 
-    // 1) LangGraph decides what to do
+    // 1) LangGraph decides what to do (rule templates take priority over LLM)
+    const aiRules = await this.settings.getAiRules();
     const decision = await this.workflow.run({
       conversationId,
       history: history.map((m: { senderType: string; text: string | null }) => ({
@@ -80,6 +81,13 @@ export class AiService {
         content: m.text ?? '',
       })),
       settings,
+      aiRules: aiRules.map((r) => ({
+        name: r.name,
+        keywords: r.keywords as string[],
+        responseTemplate: r.responseTemplate,
+        enabled: r.enabled,
+        priority: r.priority,
+      })),
     });
     await this.logAgentEvent(conversationId, 'decision', decision);
 
@@ -94,12 +102,40 @@ export class AiService {
       return;
     }
 
-    // 2) Strands generates the actual reply (with tools)
+    // 2) If a rule produced an exact template reply, send it directly (no LLM cost).
+    if (decision.replyText) {
+      await this.strands.sendReplyAndStore(pageId, conversation, decision.replyText);
+      await this.logAgentEvent(conversationId, 'reply_sent', { text: decision.replyText, source: 'ai_rule' });
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          aiReplyCount: windowExpired ? 1 : conversation.aiReplyCount + 1,
+          aiReplyWindowStart: windowStart && !windowExpired ? windowStart : new Date(),
+        },
+      });
+      return;
+    }
+
+    // 3) Otherwise Strands generates the reply (with tools).
+    //    If no OpenAI API key, we cannot generate an LLM reply — escalate explicitly.
+    if (!process.env.OPENAI_API_KEY) {
+      await this.logAgentEvent(conversationId, 'escalated_no_api_key', { reason: 'missing OPENAI_API_KEY' });
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { status: 'pending' },
+      });
+      this.logger.warn(`No OPENAI_API_KEY — conversation ${conversationId} escalated (LLM branch)`);
+      return;
+    }
+
     const reply = await this.strands.generateReply({
       pageId,
       conversationId,
       customerName: conversation.customerName,
-      history: history.map((m: { text: string | null }) => m.text ?? '').filter(Boolean),
+      history: history.map((m: { senderType: string; text: string | null }) => ({
+        role: m.senderType === 'CUSTOMER' ? 'user' : 'assistant',
+        content: m.text ?? '',
+      })),
       decision,
     });
 
@@ -111,11 +147,11 @@ export class AiService {
       return;
     }
 
-    // 3) Send the reply via Messenger and store it
+    // 4) Send the reply via Messenger and store it
     await this.strands.sendReplyAndStore(pageId, conversation, reply);
     await this.logAgentEvent(conversationId, 'reply_sent', { text: reply });
 
-    // 4) Count the reply for rate limiting
+    // 5) Count the reply for rate limiting
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {

@@ -77,6 +77,36 @@ async function main() {
     }
   }
 
+  // Sample products
+  const products = [
+    { sku: 'AO-001', name: 'Áo thun cotton cao cấp', description: 'Chất cotton 100%, nhiều màu, form rộng thoáng', price: 299000, stock: 120 },
+    { sku: 'AO-002', name: 'Áo sơ mi công sở', description: 'Vải kaki cao cấp, chống nhăn, phù hợp văn phòng', price: 399000, stock: 60 },
+    { sku: 'QUAN-001', name: 'Quần jeans nam', description: 'Denim Nhật Bản, co giãn nhẹ, dáng slim', price: 549000, stock: 40 },
+    { sku: 'GI-001', name: 'Giày thể thao', description: 'Đế EVA êm, thoáng khí, phù hợp chạy bộ', price: 899000, stock: 25 },
+    { sku: 'TUI-001', name: 'Túi xách da tổng hợp', description: 'Chống nước, nhiều ngăn, phong cách công sở', price: 459000, stock: 15 },
+  ];
+  for (const product of products) {
+    const existing = await prisma.product.findUnique({ where: { sku: product.sku } });
+    if (!existing) {
+      await prisma.product.create({ data: product });
+      console.log(`Created product: ${product.name}`);
+    }
+  }
+
+  // Sample orders
+  const orders = [
+    { orderCode: 'DH12345', customerName: 'Lê Trần Thái Tâm', customerFbId: '26356230307316772', status: 'shipping', carrier: 'GHTK', estimatedDelivery: new Date(Date.now() + 2 * 86400000), items: [{ productName: 'Áo thun cotton cao cấp', qty: 2, price: 299000 }] },
+    { orderCode: 'DH12346', customerName: 'Nguyễn Văn An', status: 'processing', carrier: null, estimatedDelivery: new Date(Date.now() + 4 * 86400000), items: [{ productName: 'Giày thể thao', qty: 1, price: 899000 }] },
+    { orderCode: 'DH12347', customerName: 'Lê Trần Thái Tâm', customerFbId: '26356230307316772', status: 'delivered', carrier: 'Viettel Post', estimatedDelivery: new Date(Date.now() - 2 * 86400000), items: [{ productName: 'Quần jeans nam', qty: 1, price: 549000 }] },
+  ];
+  for (const order of orders) {
+    const existing = await prisma.order.findUnique({ where: { orderCode: order.orderCode } });
+    if (!existing) {
+      await prisma.order.create({ data: { ...order, items: order.items as unknown as object } });
+      console.log(`Created order: ${order.orderCode}`);
+    }
+  }
+
   // Default settings
   const settings = [
     { key: 'ai_tone', value: 'Thân thiện, lịch sự, xưng hô "dạ/ạ" với khách hàng.' },

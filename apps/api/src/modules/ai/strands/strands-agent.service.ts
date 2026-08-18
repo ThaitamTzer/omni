@@ -12,7 +12,7 @@ interface GenerateReplyArgs {
   pageId: string;
   conversationId: string;
   customerName: string;
-  history: string[];
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
   decision: AiDecision;
 }
 
@@ -25,6 +25,24 @@ interface ChatHistoryMessage {
 export class StrandsAgentService {
   private readonly logger = new Logger(StrandsAgentService.name);
   private readonly agents = new Map<string, Agent>();
+  private readonly agentLastUsed = new Map<string, number>();
+
+  /**
+   * Log a tool lookup to AgentLog for audit. Fire-and-forget (never blocks the reply).
+   */
+  private async logToolCall(conversationId: string, tool: string, args: unknown, result: string) {
+    try {
+      await this.prisma.agentLog.create({
+        data: {
+          conversationId,
+          event: 'tool_lookup',
+          payload: { tool, args, result: result.slice(0, 500) } as object,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`logToolCall failed: ${(e as Error).message}`);
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -41,7 +59,7 @@ export class StrandsAgentService {
    * Build the tool list for the agent. Tools that need DB access are created
    * per-instance so they can use Prisma.
    */
-  private buildTools() {
+  private buildTools(conversationId: string) {
     return [
       tool({
         name: 'lookup_product',
@@ -50,21 +68,71 @@ export class StrandsAgentService {
         inputSchema: z.object({
           keyword: z.string().describe('Từ khóa tìm kiếm sản phẩm'),
         }),
-        callback: (input: { keyword: string }) => {
-          // TODO: replace with real product DB lookup
-          return `Sản phẩm "Áo thun cotton cao cấp" — giá 299.000đ, còn 120 cái. Mô tả: chất cotton 100%, nhiều màu, form rộng thoáng.`;
+        callback: async (input: { keyword: string }) => {
+          const keyword = input.keyword.trim().toLowerCase();
+          if (!keyword) return 'Vui lòng nhập từ khóa sản phẩm cần tra cứu.';
+          try {
+            const products = await this.prisma.product.findMany({
+              where: { active: true },
+              orderBy: { createdAt: 'asc' },
+              take: 50,
+            });
+            const matched = products
+              .filter(
+                (p) =>
+                  p.sku.toLowerCase().includes(keyword) ||
+                  p.name.toLowerCase().includes(keyword) ||
+                  (p.description ?? '').toLowerCase().includes(keyword),
+              )
+              .slice(0, 3);
+
+            if (matched.length === 0) return 'Không tìm thấy sản phẩm phù hợp.';
+
+            const result = matched
+              .map(
+                (p) =>
+                  `- ${p.name} (mã ${p.sku}): ${p.price.toLocaleString('vi-VN')}đ, còn ${p.stock} cái. ${p.description ?? ''}`,
+              )
+              .join('\n');
+            void this.logToolCall(conversationId, 'lookup_product', input, result);
+            return result;
+          } catch (e) {
+            this.logger.error(`lookup_product failed: ${(e as Error).message}`);
+            return 'Không tra cứu được sản phẩm lúc này.';
+          }
         },
       }),
       tool({
         name: 'lookup_order',
         description:
-          'Tra cứu trạng thái đơn hàng theo mã đơn (hoặc tên khách hàng). Trả về trạng thái hiện tại và thời gian giao dự kiến.',
+          'Tra cứu trạng thái đơn hàng theo mã đơn (VD: DH12345). Trả về trạng thái hiện tại và thời gian giao dự kiến.',
         inputSchema: z.object({
           orderId: z.string().describe('Mã đơn hàng (VD: DH12345)'),
         }),
-        callback: (input: { orderId: string }) => {
-          // TODO: replace with real order DB lookup
-          return `Đơn hàng ${input.orderId}: đang giao hàng, dự kiến đến 2 ngày nữa. Đơn vị vận chuyển: GHTK.`;
+        callback: async (input: { orderId: string }) => {
+          const orderCode = input.orderId.trim().toUpperCase();
+          if (!orderCode) return 'Vui lòng nhập mã đơn hàng cần tra cứu.';
+          try {
+            const order = await this.prisma.order.findUnique({ where: { orderCode } });
+            if (!order) return `Không tìm thấy đơn hàng ${orderCode}.`;
+
+            const statusText: Record<string, string> = {
+              pending: 'đang chờ xử lý',
+              processing: 'đang xử lý',
+              shipping: 'đang giao hàng',
+              delivered: 'đã giao thành công',
+              cancelled: 'đã hủy',
+            };
+            const eta = order.estimatedDelivery
+              ? ` Dự kiến giao: ${order.estimatedDelivery.toLocaleDateString('vi-VN')}.`
+              : '';
+            const result = `Đơn hàng ${order.orderCode} (${order.customerName}): ${statusText[order.status] ?? order.status}.${order.carrier ? ` Đơn vị vận chuyển: ${order.carrier}.` : ''}${eta}`;
+            void this.logToolCall(conversationId, 'lookup_order', input, result);
+            return result;
+          } catch (e) {
+            this.logger.error(`lookup_order failed: ${(e as Error).message}`);
+            return 'Không tra cứu được đơn hàng lúc này.';
+          }
         },
       }),
       tool({
@@ -97,7 +165,9 @@ export class StrandsAgentService {
 
             if (matched.length === 0) return 'Không tìm thấy FAQ phù hợp.';
 
-            return matched.map((f) => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n');
+            const result = matched.map((f) => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n');
+            void this.logToolCall(conversationId, 'lookup_faq', input, result);
+            return result;
           } catch (e) {
             this.logger.error(`lookup_faq failed: ${(e as Error).message}`);
             return 'Không tìm thấy FAQ phù hợp.';
@@ -111,9 +181,12 @@ export class StrandsAgentService {
    * Build (or reuse) a Strands agent for a conversation. Agents keep their own
    * message history so context carries across messages within a conversation.
    */
-  private getAgent(conversationId: string, systemPrompt: string, history: string[]): Agent {
+  private getAgent(conversationId: string, systemPrompt: string, history: GenerateReplyArgs['history']): Agent {
     const existing = this.agents.get(conversationId);
-    if (existing) return existing;
+    if (existing) {
+      this.agentLastUsed.set(conversationId, Date.now());
+      return existing;
+    }
 
     const model = new OpenAIModel({
       modelId: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
@@ -124,22 +197,36 @@ export class StrandsAgentService {
 
     const agent = new Agent({
       model,
-      tools: this.buildTools(),
+      tools: this.buildTools(conversationId),
       systemPrompt,
       printer: false,
     });
 
-    // Seed conversation history so the agent has context from the start
+    // Seed conversation history so the agent has context from the start.
+    // Preserve the real role (customer → user, bot/staff → assistant) so the
+    // model can tell who said what.
     const seed: ChatHistoryMessage[] = history
-      .filter((line) => line.trim())
-      .map((line) => ({ role: 'user', content: [{ type: 'textBlock', text: line }] }));
+      .filter((line) => line.content.trim())
+      .map((line) => ({ role: line.role, content: [{ type: 'textBlock', text: line.content }] }));
     (agent.messages as ChatHistoryMessage[]).push(...seed);
 
     this.agents.set(conversationId, agent);
-    // Simple bound on agent count to avoid unbounded memory
+    this.agentLastUsed.set(conversationId, Date.now());
+
+    // Bound on agent count: evict the least-recently-used agent (LRU), not the oldest-inserted.
     if (this.agents.size > 500) {
-      const firstKey = this.agents.keys().next().value;
-      if (firstKey) this.agents.delete(firstKey);
+      let lruKey: string | undefined;
+      let lruTime = Infinity;
+      for (const [key, t] of this.agentLastUsed) {
+        if (t < lruTime) {
+          lruTime = t;
+          lruKey = key;
+        }
+      }
+      if (lruKey) {
+        this.agents.delete(lruKey);
+        this.agentLastUsed.delete(lruKey);
+      }
     }
     return agent;
   }
@@ -160,7 +247,8 @@ export class StrandsAgentService {
 - Nếu không chắc chắn hoặc khách yêu cầu điều ngoài phạm vi, trả lời là sẽ chuyển cho nhân viên hỗ trợ.`;
 
     const agent = this.getAgent(args.conversationId, systemPrompt, args.history);
-    const prompt = `Khách vừa nhắn: "${args.history[args.history.length - 1] ?? ''}". Hãy trả lời khách.`;
+    const last = args.history[args.history.length - 1];
+    const prompt = `Khách vừa nhắn: "${last?.content ?? ''}". Hãy trả lời khách.`;
 
     try {
       this.realtime.emitTyping(args.conversationId, true);
