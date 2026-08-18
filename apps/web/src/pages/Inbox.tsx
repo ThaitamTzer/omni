@@ -777,9 +777,7 @@ export default function Inbox() {
                 </Box>
               ))}
               {typing && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: 12, px: 0.5 }}>
-                  <SmartToy sx={{ fontSize: 14 }} />
-                  {t('inbox.aiTyping')}
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: 12, px: 0.5, py: 0.5 }}>
                   <Box sx={{ display: 'inline-flex', gap: 0.4 }}>
                     {[0, 1, 2].map((i) => (
                       <Box
@@ -798,6 +796,8 @@ export default function Inbox() {
                       />
                     ))}
                   </Box>
+                  <SmartToy sx={{ fontSize: 14 }} />
+                  {t('inbox.aiTyping')}
                 </Box>
               )}
               <div ref={bottomRef} />

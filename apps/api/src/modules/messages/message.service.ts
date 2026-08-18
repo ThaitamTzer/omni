@@ -93,8 +93,11 @@ export class MessageService {
     this.realtime.emitNewMessage(conversation.id, saved);
     this.realtime.emitConversationUpdate(conversation.id, { status: 'open' });
 
-    // Enqueue AI processing for customer messages
-    if (!isEcho && conversation.aiEnabled) {
+    // Enqueue AI processing for customer text messages only.
+    // Attachment-only messages (image/file, no text) go straight to staff —
+    // AI can't interpret image content, and classifying empty text would
+    // escalate the conversation to pending for no reason.
+    if (!isEcho && conversation.aiEnabled && text.trim()) {
       await this.aiQueue.add(
         'process-conversation',
         { conversationId: conversation.id, pageId: page.id, customerFbId: msg.customerFbId },

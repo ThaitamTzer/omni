@@ -15,6 +15,14 @@ describe('LangGraphWorkflow', () => {
       settings: {},
     });
 
+  const runWithRules = (text: string, rules: Array<Record<string, unknown>>) =>
+    workflow.run({
+      conversationId: 'test',
+      history: [{ role: 'user', content: text }],
+      settings: {},
+      aiRules: rules as never,
+    });
+
   it('classifies price questions as reply', async () => {
     const d = await run('Áo thun này giá bao nhiêu ạ?');
     expect(d.intent).toBe('price');
@@ -50,6 +58,60 @@ describe('LangGraphWorkflow', () => {
   it('classifies shipping questions as reply', async () => {
     const d = await run('Giao hàng nội thành mất bao lâu vậy?');
     expect(d.intent).toBe('shipping');
+    expect(d.action).toBe('reply');
+  });
+
+  it('TH#13: matching AiRule → returns template as replyText (no LLM)', async () => {
+    const d = await runWithRules('giá áo thun bao nhiêu vậy?', [
+      { name: 'Hỏi giá', keywords: ['giá', 'bao nhiêu'], responseTemplate: 'Dạ, giá sản phẩm là 299.000đ ạ.', enabled: true, priority: 1 },
+    ]);
+    expect(d.action).toBe('reply');
+    expect(d.replyText).toBe('Dạ, giá sản phẩm là 299.000đ ạ.');
+  });
+
+  it('TH#13: disabled rule → ignored, falls back to classify', async () => {
+    const d = await runWithRules('giá áo thun bao nhiêu vậy?', [
+      { name: 'Hỏi giá', keywords: ['giá'], responseTemplate: 'Dạ giá là...', enabled: false, priority: 1 },
+    ]);
+    expect(d.replyText).toBeUndefined();
+    expect(d.action).toBe('reply');
+    expect(d.intent).toBe('price');
+  });
+
+  it('TH#13: higher priority rule wins when multiple match', async () => {
+    const d = await runWithRules('hoàn tiền đơn DH12345', [
+      { name: 'Hoàn tiền', keywords: ['hoàn tiền'], responseTemplate: 'Dạ shop sẽ hỗ trợ hoàn tiền ạ.', enabled: true, priority: 5 },
+      { name: 'Tra đơn', keywords: ['đơn'], responseTemplate: 'Đơn đang giao ạ.', enabled: true, priority: 1 },
+    ]);
+    expect(d.replyText).toBe('Dạ shop sẽ hỗ trợ hoàn tiền ạ.');
+  });
+
+  it('TH#11: refund keyword escalates', async () => {
+    const d = await run('Tôi muốn hoàn tiền đơn hàng');
+    expect(d.intent).toBe('escalate');
+    expect(d.action).toBe('escalate');
+  });
+
+  it('TH#11: legal threat escalates', async () => {
+    const d = await run('Tôi sẽ báo công an nếu không giải quyết');
+    expect(d.action).toBe('escalate');
+  });
+
+  it('TH#14: product question → reply', async () => {
+    const d = await run('Còn hàng size L không ạ?');
+    expect(d.intent).toBe('product');
+    expect(d.action).toBe('reply');
+  });
+
+  it('TH#14: faq question → reply', async () => {
+    const d = await run('Chính sách đổi trả của shop thế nào?');
+    expect(d.intent).toBe('faq');
+    expect(d.action).toBe('reply');
+  });
+
+  it('TH#14: thanks → reply', async () => {
+    const d = await run('Cảm ơn shop nhiều nha');
+    expect(d.intent).toBe('thanks');
     expect(d.action).toBe('reply');
   });
 });
