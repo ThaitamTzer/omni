@@ -73,15 +73,38 @@ npx vitest run apps/api/src/modules/messages/message.service.spec.ts   # test ri
 - `workflow.spec` bao phủ classify + AiRule (khớp/disabled/priority, escalate keywords, intent rõ)
 - NestJS build biên dịch cả `*.spec.ts` nên test phải sạch TS (dùng `!` non-null assertion khi truy cập mock calls)
 
-## Workflow bắt buộc (đã chốt với người dùng)
+## Workflow bắt buộc (đã chốt với người dùng — chất lượng trên tốc độ)
 
-Khi triển khai tính năng (không phải bug nhỏ):
-1. Viết spec đầy đủ (objective, commands, structure, style, testing, boundaries, success criteria)
-2. Tự verify spec → tự review spec → bổ sung nếu thiếu
-3. Spec hoàn chỉnh mới chuyển design, lặp lại verify/review/bổ sung
-4. Có todo hoàn chỉnh, đầy đủ, không thiếu sót mới bắt đầu code
-5. Sau khi code: verify thực tế (browser khi đổi UI, API khi đổi backend) trước khi kết luận
-6. Commit + push (commit message kèm `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`)
+Khi triển khai tính năng (không phải bug nhỏ), luồng chuẩn 5 giai đoạn:
+
+### 1. SPEC
+- Viết spec đầy đủ (objective, commands, structure, style, testing, boundaries, success criteria)
+- Tự verify spec → tự review spec → bổ sung nếu thiếu (không có "placeholder", "TBD")
+- Mọi giả định phải nêu tường minh ("ASSUMPTIONS I'M MAKING") trước khi viết
+
+### 2. DESIGN + PLAN
+- Design lặp lại verify/review/bổ sung tương tự spec
+- Plan phải **bite-sized** (mỗi task 2-5 phút), **No Placeholders** (không "thêm validation", "xử lý edge case" — phải ghi cụ thể code/thao tác)
+- Mỗi task: acceptance criteria + verification + dependency + file cụ thể
+- Cắt theo **vertical slice** (schema+API+UI cho 1 luồng, không cắt theo layer)
+- Task > 5 files → tách nhỏ; checkpoint sau mỗi 2-3 task
+
+### 3. TODO
+- Todo hoàn chỉnh, đầy đủ, không thiếu sót MỚI bắt đầu code
+
+### 4. CODE
+- TDD: viết test fail trước → chạy xác nhận đỏ → implement → xanh
+- Mỗi quyết định non-trivial (branching, cross-module, invariant) → **doubt-driven**: spawn sub-agent fresh-context review (adversarial "find issues", KHÔNG truyền kết luận của mình) → reconcile → tối đa 3 vòng
+- Sau implement: **de-sloppify pass** (bỏ test thừa kiểm framework, defensive check thừa, console.log, code comment)
+
+### 5. VERIFY + SHIP
+- Chạy verification-loop đầy đủ: build → type check → lint → test → security scan → diff review
+- **Bằng chứng trước tuyên bố** (verification-before-completion): không nói "xong" nếu chưa chạy lệnh verify trong chính message này
+- Verify thực tế: browser khi đổi UI (playwright, screenshot), API khi đổi backend (curl/webhook thật)
+- Commit + push (commit message kèm `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`)
+
+### Khi gặp BUG (không phải feature)
+Theo `diagnosing-bugs`: xây **feedback loop đỏ** (test/curl chạy được 1 lệnh duy nhất tái hiện đúng triệu chứng) → reproduce + minimize → 3-5 hypotheses (falsifiable, trình user) → instrument từng biến → fix + regression test → cleanup. KHÔNG đoán mò trước khi có loop đỏ.
 
 ## AI Pipeline (tóm tắt)
 
