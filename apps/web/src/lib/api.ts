@@ -1,4 +1,8 @@
-import { useAuthStore } from './authStore';
+import {
+  getStoredAccessToken,
+  setStoredToken,
+  clearStoredAuth,
+} from './authStore';
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -16,7 +20,7 @@ async function doRefresh(): Promise<boolean> {
   });
   if (!resp.ok) return false;
   const data = (await resp.json()) as { token: string };
-  useAuthStore.getState().setTokens(data.token);
+  setStoredToken(data.token);
   return true;
 }
 
@@ -38,15 +42,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     return fetch(`${BASE}${path}`, { ...options, headers, credentials: 'include' });
   };
 
-  let resp = await doFetch(useAuthStore.getState().accessToken);
+  let resp = await doFetch(getStoredAccessToken());
 
   // Token expired → refresh once and retry
   if (resp.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
-      resp = await doFetch(useAuthStore.getState().accessToken);
+      resp = await doFetch(getStoredAccessToken());
     } else {
-      useAuthStore.getState().logout();
+      clearStoredAuth();
       window.location.href = '/login';
       throw new Error('Session expired');
     }
@@ -69,5 +73,5 @@ export const api = {
 };
 
 export function getToken(): string | null {
-  return useAuthStore.getState().accessToken;
+  return getStoredAccessToken();
 }

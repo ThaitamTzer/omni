@@ -10,13 +10,13 @@ import {
   Typography,
   Alert,
 } from '@mui/material';
-import { useAuthStore } from '../lib/authStore';
+import { useSetAuth } from '../lib/authStore';
 import { api } from '../lib/api';
 import type { Staff } from '../lib/authStore';
 
 export default function Login() {
   const { t } = useTranslation();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const setAuth = useSetAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,7 +32,7 @@ export default function Login() {
         email,
         password,
       });
-      setAuth(res);
+      setAuth({ staff: res.staff, accessToken: res.token });
       navigate('/');
     } catch {
       setError(t('login.error'));

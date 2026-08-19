@@ -18,7 +18,7 @@ import {
   Logout,
   Facebook,
 } from '@mui/icons-material';
-import { useAuthStore, useStaff } from './lib/authStore';
+import { useStaff, useLogout } from './lib/authStore';
 import { api } from './lib/api';
 import InitialsAvatar from './components/InitialsAvatar';
 import Login from './pages/Login';
@@ -92,7 +92,7 @@ function NavGroup({ items, title }: { items: typeof NAV_MAIN; title?: string }) 
 function Layout({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const staff = useStaff();
-  const logout = useAuthStore((s) => s.logout);
+  const logout = useLogout();
   const navigate = useNavigate();
   const location = useLocation();
 
