@@ -98,14 +98,18 @@ export class LangGraphWorkflow {
     if (state.replyText) {
       return { action: 'reply' };
     }
+    // Escalate keywords (complaints, refund, legal...) always go to a human.
     if (intent === 'escalate') {
       return { action: 'escalate' };
     }
+    // Known patterns (price, shipping, greeting...) → reply with high confidence.
     if (confidence >= 0.7) {
       return { action: 'reply' };
     }
-    // Unknown/low-confidence — ask a human
-    return { action: 'escalate' };
+    // Unknown/low-confidence: let the LLM try first — it can still refuse or
+    // defer to a human (system prompt). Escalation happens later when the LLM
+    // returns no usable reply or the API key is missing.
+    return { action: 'reply' };
   }
 
   private buildGraph() {

@@ -42,11 +42,28 @@ describe('LangGraphWorkflow', () => {
     expect(d.action).toBe('escalate');
   });
 
-  it('escalates unknown/low-confidence messages', async () => {
+  it('unknown/low-confidence messages → LLM tries to reply (not escalated)', async () => {
     const d = await run('xyz qwerty');
     expect(d.intent).toBe('unknown');
     expect(d.confidence).toBeLessThan(0.7);
-    expect(d.action).toBe('escalate');
+    expect(d.action).toBe('reply');
+  });
+
+  it('REGRESSION: follow-up questions after greeting are still replied', async () => {
+    // Real customer messages from production logs — these were escalated
+    // because they don't match any regex pattern, leaving the AI silent
+    // after the first reply.
+    const cases = [
+      'tên gì vậy em',
+      'em làm việc từ giờ nào đến giờ nào?',
+      'có ai đang online không',
+      'bạn tên là gì ?',
+      'mình muốn mua đồ thì liên hệ ai ?',
+    ];
+    for (const text of cases) {
+      const d = await run(text);
+      expect(d.action, `"${text}" should be replied by LLM`).toBe('reply');
+    }
   });
 
   it('classifies greetings as reply', async () => {
