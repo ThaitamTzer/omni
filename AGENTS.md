@@ -9,7 +9,7 @@ Hệ thống single-tenant quản lý tin nhắn nhiều Facebook Page (Messenge
 - **Queue**: BullMQ + Redis (`webhook-events`, `ai-replies`)
 - **Realtime**: Socket.IO (`realtime.gateway`)
 - **AI**: LangGraph JS (classify/decide) + Strands Agents SDK (`@strands-agents/sdk`) + OpenAI (`gpt-4o-mini`), Zod
-- **Frontend**: MUI 6 (Material UI), TanStack Query (data fetching), Zustand (auth state), i18next (tiếng Việt)
+- **Frontend**: MUI 6 (Material UI), TanStack Query (data fetching), Recoil (auth state), i18next (tiếng Việt)
 - **Auth**: JWT (access) + refresh token (cookie), bcryptjs hash
 
 ## Commands
@@ -49,7 +49,7 @@ apps/api/src/modules/
 - Prisma models PascalCase; migration qua `npx prisma migrate dev --name <tên>`
 - Frontend: functional components + hooks, MUI `sx`, i18n keys trong `vi.json` (KHÔNG hardcode chữ)
 - i18next: biến phải dùng `{{var}}` (2 cặp ngoặc), không bao giờ `{var}`
-- TanStack Query cho server state; Zustand cho auth; không tự viết wrapper
+- TanStack Query cho server state; Recoil cho auth; không tự viết wrapper
 - Tất cả text UI qua i18n, hiện chỉ tiếng Việt
 - Tool callback AI: async, trả string tiếng Việt, lỗi → fallback thân thiện (không throw)
 - Mọi thao tác xóa quan trọng bắt buộc dialog xác nhận; xóa mềm → thùng rác riêng, xóa vĩnh viễn qua confirm dialog
@@ -59,6 +59,19 @@ apps/api/src/modules/
 - **Always**: chạy build + test trước commit; verify trên browser thực tế (playwright) khi đổi UI; cập nhật README
 - **Ask first**: đổi schema Prisma, thêm dependency, đổi port docker-compose
 - **Never**: commit secret/credential thật (`**/.env.example` phải placeholder, đã có trong .gitignore); xóa dữ liệu không qua xác nhận; sửa service hệ thống bằng sudo
+
+## Tests
+
+```bash
+npm test                    # Vitest toàn bộ (43 test, 5 files)
+npx vitest run apps/api/src/modules/messages/message.service.spec.ts   # test riêng 1 file
+```
+
+- Test file nằm cạnh source: `message.service.spec.ts`, `ai.service.spec.ts`, `langgraph/workflow.spec.ts`, `webhook/webhook-inbound.adapter.spec.ts`, `webhook/webhook-signature.spec.ts`
+- `message.service.spec` bao phủ các trường hợp inbound (hội thoại mới/open/closed/pending/soft-delete/aiEnabled=false/echo/attachment-only)
+- `ai.service.spec` bao phủ pipeline (rate limit, escalate, AiRule template, thiếu API key, LLM reply/null, guard xóa)
+- `workflow.spec` bao phủ classify + AiRule (khớp/disabled/priority, escalate keywords, intent rõ)
+- NestJS build biên dịch cả `*.spec.ts` nên test phải sạch TS (dùng `!` non-null assertion khi truy cập mock calls)
 
 ## Workflow bắt buộc (đã chốt với người dùng)
 
