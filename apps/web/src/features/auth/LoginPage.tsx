@@ -10,11 +10,10 @@ import {
   Typography,
   Alert,
 } from '@mui/material';
-import { useSetAuth } from '../lib/authStore';
-import { api } from '../lib/api';
-import type { Staff } from '../lib/authStore';
+import { useSetAuth } from '@/lib/auth/authStore';
+import { login } from '@/features/auth/api';
 
-export default function Login() {
+export default function LoginPage() {
   const { t } = useTranslation();
   const setAuth = useSetAuth();
   const navigate = useNavigate();
@@ -28,10 +27,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await api.post<{ token: string; staff: Staff }>('/auth/login', {
-        email,
-        password,
-      });
+      const res = await login(email, password);
       setAuth({ staff: res.staff, accessToken: res.token });
       navigate('/');
     } catch {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Avatar } from '@mui/material';
-import InitialsAvatar from './InitialsAvatar';
+import InitialsAvatar from '@/components/InitialsAvatar';
 
 /**
  * Avatar cho khách hàng: hiển thị ảnh đại diện nếu có (customerAvatar),

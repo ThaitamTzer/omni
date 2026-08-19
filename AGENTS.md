@@ -41,7 +41,27 @@ apps/api/src/modules/
   messenger/      # Graph API call (sendText, getCustomerProfile)
   realtime/       # Socket.IO gateway (emit new message/typing/events)
   queue/          # BullMQ global module
+
+apps/web/src/     # feature-based — mỗi domain là deep module
+  app/layout/     # AppLayout (sidebar/header/auth guard) — shell duy nhất
+  components/     # CHỈ shared thật sự (InitialsAvatar, EmptyState, Toast)
+  lib/
+    api/          # client.ts (createApiClient + TokenProvider, testable) + index.ts (singleton api)
+    auth/         # authStore.ts (Recoil atom + AuthBridge + authTokenProvider adapter)
+    hooks/        # useToast (toast dùng chung)
+    utils/        # avatar, mergeMessages (thuần, có spec)
+  features/
+    auth/         # api.ts (login/logout) + LoginPage
+    inbox/        # api.ts (keys + query/mutation hooks) + useInboxRealtime + components + InboxPage
+    facebook-pages/  # api.ts + components (PagesTable, dialogs) + PagesPage
+    settings/     # api.ts + components (AiRules/AiSettings/Faq sections) + SettingsPage
 ```
+
+Convention web:
+- Mỗi feature tự quản **query keys + mutation hooks** trong `features/<tên>/api.ts` (invalidate nội bộ); page chỉ compose
+- Realtime event → cache updates nằm trong `features/inbox/useInboxRealtime.ts` (không chôn trong component)
+- Fetch layer (`lib/api`) chỉ biết `TokenProvider` interface — không import Recoil/authStore
+- Alias `@/*` → `apps/web/src` (tsconfig + vite + vitest đều cấu hình)
 
 ## Conventions
 
@@ -63,11 +83,12 @@ apps/api/src/modules/
 ## Tests
 
 ```bash
-npm test                    # Vitest toàn bộ (43 test, 5 files)
+npm test                    # Vitest toàn bộ (52 test, 7 files)
 npx vitest run apps/api/src/modules/messages/message.service.spec.ts   # test riêng 1 file
 ```
 
 - Test file nằm cạnh source: `message.service.spec.ts`, `ai.service.spec.ts`, `langgraph/workflow.spec.ts`, `webhook/webhook-inbound.adapter.spec.ts`, `webhook/webhook-signature.spec.ts`
+- Web: `apps/web/src/lib/utils/mergeMessages.spec.ts` (merge+dedupe messages), `apps/web/src/lib/api/client.spec.ts` (createApiClient: Bearer, 401→refresh→retry, session expired, single-flight)
 - `message.service.spec` bao phủ các trường hợp inbound (hội thoại mới/open/closed/pending/soft-delete/aiEnabled=false/echo/attachment-only)
 - `ai.service.spec` bao phủ pipeline (rate limit, escalate, AiRule template, thiếu API key, LLM reply/null, guard xóa)
 - `workflow.spec` bao phủ classify + AiRule (khớp/disabled/priority, escalate keywords, intent rõ)

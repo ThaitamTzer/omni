@@ -5,6 +5,7 @@ import {
   useRecoilValue,
   useSetRecoilState,
 } from 'recoil';
+import type { TokenProvider } from '@/lib/api/token-provider';
 
 export interface Staff {
   id: string;
@@ -128,3 +129,10 @@ export function setStoredToken(accessToken: string): void {
 export function clearStoredAuth(): void {
   commit({ staff: null, accessToken: null });
 }
+
+/** Adapter TokenProvider để api client đọc/ghi token mà không phụ thuộc Recoil. */
+export const authTokenProvider: TokenProvider = {
+  getAccessToken: getStoredAccessToken,
+  setAccessToken: setStoredToken,
+  clearAuth: clearStoredAuth,
+};
