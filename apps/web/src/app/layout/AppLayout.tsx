@@ -17,6 +17,7 @@ import {
   SettingsOutlined,
   Logout,
   Facebook,
+  MenuBook,
 } from '@mui/icons-material';
 import { useStaff, useLogout } from '@/lib/auth/authStore';
 import { logout } from '@/features/auth/api';
@@ -25,6 +26,7 @@ import InitialsAvatar from '@/components/InitialsAvatar';
 const NAV_MAIN = [
   { to: '/', labelKey: 'nav.inbox', icon: <ChatBubbleOutline fontSize="small" />, end: true },
   { to: '/pages', labelKey: 'nav.pages', icon: <Facebook fontSize="small" />, end: false },
+  { to: '/knowledge', labelKey: 'nav.knowledge', icon: <MenuBook fontSize="small" />, end: false },
 ];
 
 const NAV_SECONDARY = [

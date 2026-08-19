@@ -175,3 +175,28 @@ model Setting {
   key   String @id
   value String
 }
+
+model KnowledgeFile {
+  id           String   @id @default(cuid())
+  originalName String
+  mimeType     String
+  size         Int
+  path         String // relative path in uploads/
+  kind         String // text | pdf | docx | xlsx | image
+  status       String // processing | ready | failed
+  error        String?
+  createdAt    DateTime @default(now())
+
+  chunks KnowledgeChunk[]
+}
+
+model KnowledgeChunk {
+  id        String   @id @default(cuid())
+  fileId    String
+  file      KnowledgeFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  content   String
+  vector    Unsupported("vector(1536)")? // pgvector — text-embedding-3-small
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+}

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StateGraph, Annotation, START, END } from '@langchain/langgraph';
 import { AiDecision } from '../ai.service';
+import { KnowledgeService } from '../../knowledge/knowledge.service';
 
 /**
  * Conversation state shared across the graph.
@@ -16,6 +17,7 @@ const ConversationState = Annotation.Root({
   confidence: Annotation<number>,
   action: Annotation<'reply' | 'escalate' | 'skip'>,
   replyText: Annotation<string | null>,
+  knowledge: Annotation<Array<{ content: string; similarity: number }>>,
 });
 
 type State = typeof ConversationState.State;
@@ -31,7 +33,7 @@ export class LangGraphWorkflow {
   private readonly logger = new Logger(LangGraphWorkflow.name);
   private readonly graph;
 
-  constructor() {
+  constructor(private readonly knowledge: KnowledgeService) {
     this.graph = this.buildGraph();
   }
 
@@ -112,15 +114,35 @@ export class LangGraphWorkflow {
     return { action: 'reply' };
   }
 
+  /**
+   * RAG retrieval: when the decision is to reply, fetch relevant knowledgebase
+   * chunks for the last customer message. This context is passed to the LLM
+   * (Strands) so it can answer from the KB.
+   */
+  private async retrieveKbNode(state: State): Promise<Partial<State>> {
+    if (state.action !== 'reply') return {};
+    const lastUserText = [...state.history].reverse().find((m) => m.role === 'user')?.content ?? '';
+    if (!lastUserText.trim()) return {};
+    try {
+      const knowledge = await this.knowledge.search(lastUserText, 5);
+      return { knowledge };
+    } catch (e) {
+      this.logger.warn(`KB retrieval failed: ${(e as Error).message}`);
+      return {};
+    }
+  }
+
   private buildGraph() {
     const g = new StateGraph(ConversationState)
       .addNode('ruleMatch', this.ruleMatchNode.bind(this))
       .addNode('classify', this.classifyNode.bind(this))
       .addNode('decide', this.decideNode.bind(this))
+      .addNode('retrieveKB', this.retrieveKbNode.bind(this))
       .addEdge(START, 'ruleMatch')
       .addEdge('ruleMatch', 'classify')
       .addEdge('classify', 'decide')
-      .addEdge('decide', END);
+      .addEdge('decide', 'retrieveKB')
+      .addEdge('retrieveKB', END);
 
     return g.compile();
   }
@@ -152,6 +174,7 @@ export class LangGraphWorkflow {
       confidence: result.confidence,
       action: result.action,
       replyText: result.replyText ?? undefined,
+      knowledge: result.knowledge ?? [],
     };
   }
 }

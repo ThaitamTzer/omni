@@ -9,6 +9,8 @@ export interface AiDecision {
   confidence: number;
   action: 'reply' | 'escalate' | 'skip';
   replyText?: string;
+  /** RAG chunks retrieved from the knowledgebase (only for reply actions). */
+  knowledge?: Array<{ content: string; similarity: number }>;
 }
 
 @Injectable()
@@ -137,6 +139,9 @@ export class AiService {
         content: m.text ?? '',
       })),
       decision,
+      knowledgeContext: decision.knowledge?.length
+        ? decision.knowledge.map((k) => k.content).join('\n\n')
+        : undefined,
     });
 
     if (!reply) {

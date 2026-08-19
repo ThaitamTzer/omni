@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
+import express from 'express';
+import { resolve } from 'node:path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
@@ -10,6 +12,8 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
+  // Serve uploaded knowledgebase files (images) — public read access.
+  app.use('/uploads', express.static(resolve(__dirname, '../../../uploads')));
   const webOrigins = (config.get('WEB_URL') ?? 'http://localhost:5173')
     .split(',')
     .map((s: string) => s.trim())

@@ -4,6 +4,7 @@ import LoginPage from '@/features/auth/LoginPage';
 import InboxPage from '@/features/inbox/InboxPage';
 import PagesPage from '@/features/facebook-pages/PagesPage';
 import SettingsPage from '@/features/settings/SettingsPage';
+import KnowledgePage from '@/features/knowledge/KnowledgePage';
 
 export default function App() {
   return (
@@ -22,6 +23,14 @@ export default function App() {
         element={
           <AppLayout>
             <PagesPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/knowledge"
+        element={
+          <AppLayout>
+            <KnowledgePage />
           </AppLayout>
         }
       />

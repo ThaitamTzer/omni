@@ -38,10 +38,10 @@ export function createApiClient(provider: TokenProvider, opts: ApiClientOptions 
   }
 
   async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const isForm = options.body instanceof FormData;
     const doFetch = (t: string | null): Promise<Response> => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
+      const headers: Record<string, string> = {};
+      if (!isForm) headers['Content-Type'] = 'application/json';
       if (t) headers.Authorization = `Bearer ${t}`;
       return fetch(`${BASE}${path}`, { ...options, headers, credentials: 'include' });
     };
@@ -71,6 +71,8 @@ export function createApiClient(provider: TokenProvider, opts: ApiClientOptions 
     get: <T>(path: string) => request<T>(path),
     post: <T>(path: string, body: unknown) =>
       request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    postForm: <T>(path: string, form: FormData) =>
+      request<T>(path, { method: 'POST', body: form }),
     patch: <T>(path: string, body: unknown) =>
       request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
     del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

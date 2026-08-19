@@ -178,6 +178,33 @@ describe('AiService.processConversation', () => {
     expect(updateCall[0].data.aiReplyCount).toBe(1);
   });
 
+  it('RAG: decision.knowledge → generateReply nhận knowledgeContext', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    strandsMock.generateReply.mockResolvedValue('Dạ, bảo hành 12 tháng ạ.');
+    workflowMock.run.mockResolvedValue({
+      action: 'reply',
+      intent: 'unknown',
+      confidence: 0.3,
+      knowledge: [{ content: 'Chính sách bảo hành 12 tháng.', similarity: 0.85 }],
+    });
+
+    await service.processConversation('conv-1', 'page-1');
+
+    const args = strandsMock.generateReply.mock.calls[0][0];
+    expect(args.knowledgeContext).toContain('Chính sách bảo hành 12 tháng.');
+  });
+
+  it('RAG: không có knowledge → knowledgeContext undefined', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    strandsMock.generateReply.mockResolvedValue('Xin chào ạ.');
+    workflowMock.run.mockResolvedValue({ action: 'reply', intent: 'greeting', confidence: 0.9, knowledge: [] });
+
+    await service.processConversation('conv-1', 'page-1');
+
+    const args = strandsMock.generateReply.mock.calls[0][0];
+    expect(args.knowledgeContext).toBeUndefined();
+  });
+
   it('TH#18: generateReply returns null → pending, no send', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     strandsMock.generateReply.mockResolvedValue(null);

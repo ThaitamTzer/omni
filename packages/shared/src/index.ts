@@ -72,3 +72,16 @@ export interface FaqDto {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type KnowledgeKind = 'text' | 'pdf' | 'docx' | 'xlsx' | 'image';
+
+export interface KnowledgeFileDto {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  kind: KnowledgeKind;
+  status: 'processing' | 'ready' | 'failed';
+  error: string | null;
+  createdAt: Date;
+}

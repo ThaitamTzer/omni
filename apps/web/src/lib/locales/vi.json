@@ -3,6 +3,7 @@
   "nav": {
     "inbox": "Hộp thư",
     "pages": "Facebook Pages",
+    "knowledge": "Knowledgebase",
     "settings": "Cài đặt",
     "logout": "Đăng xuất",
     "admin": "Quản trị viên",
@@ -171,6 +172,25 @@
     "faqColKeywords": "Từ khóa",
     "deleteFaq": "Xóa FAQ",
     "error": "Có lỗi xảy ra"
+  },
+  "knowledge": {
+    "title": "Knowledgebase",
+    "subtitle": "Tài liệu, chính sách và hình ảnh để AI tra cứu khi trả lời khách",
+    "dropTitle": "Kéo thả file vào đây hoặc bấm để chọn",
+    "dropHint": "Hỗ trợ: PDF, Word, Excel, txt, md, csv, json, ảnh (PNG/JPG/WebP/GIF)",
+    "upload": "Tải lên",
+    "uploading": "Đang tải lên...",
+    "uploaded": "Đã tải lên {{count}} file",
+    "files": "Danh sách file",
+    "processing": "Đang xử lý...",
+    "ready": "Sẵn sàng",
+    "failed": "Lỗi",
+    "delete": "Xóa",
+    "deleted": "Đã xóa file",
+    "deleteConfirmTitle": "Xóa file khỏi knowledgebase",
+    "deleteConfirmDesc": "File và toàn bộ nội dung đã xử lý sẽ bị xóa vĩnh viễn. AI sẽ không còn dùng thông tin này.",
+    "emptyTitle": "Chưa có tài liệu nào",
+    "emptyDesc": "Tải lên tài liệu/hình ảnh để AI có thêm kiến thức trả lời khách hàng."
   },
   "common": {
     "optional": "tùy chọn",

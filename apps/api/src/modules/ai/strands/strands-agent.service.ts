@@ -14,6 +14,8 @@ interface GenerateReplyArgs {
   customerName: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   decision: AiDecision;
+  /** Relevant knowledgebase chunks (RAG) to ground the reply. */
+  knowledgeContext?: string;
 }
 
 interface ChatHistoryMessage {
@@ -244,7 +246,8 @@ export class StrandsAgentService {
 - Trả lời ngắn gọn, tự nhiên, đúng trọng tâm câu hỏi.
 - Dùng tool để tra cứu sản phẩm/đơn hàng/FAQ khi cần.
 - KHÔNG hứa hẹn điều gì ngoài chính sách của shop.
-- Nếu không chắc chắn hoặc khách yêu cầu điều ngoài phạm vi, trả lời là sẽ chuyển cho nhân viên hỗ trợ.`;
+- Nếu không chắc chắn hoặc khách yêu cầu điều ngoài phạm vi, trả lời là sẽ chuyển cho nhân viên hỗ trợ.
+${args.knowledgeContext ? `\nThông tin từ knowledgebase của shop (ưu tiên dùng để trả lời chính xác):\n${args.knowledgeContext}\nNếu thông tin này không liên quan câu hỏi, bỏ qua.` : ''}`;
 
     const agent = this.getAgent(args.conversationId, systemPrompt, args.history);
     const last = args.history[args.history.length - 1];

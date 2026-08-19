@@ -10,6 +10,7 @@ import { StaffModule } from './modules/staff/staff.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AgentLogsModule } from './modules/agent-logs/agent-logs.module';
 import { AiModule } from './modules/ai/ai.module';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { MessengerModule } from './modules/messenger/messenger.module';
@@ -30,6 +31,7 @@ import { JwtAuthGuard } from './common/jwt-auth.guard';
     SettingsModule,
     AgentLogsModule,
     AiModule,
+    KnowledgeModule,
   ],
   providers: [
     // Protect every endpoint by default; opt out with @Public()

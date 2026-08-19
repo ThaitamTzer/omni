@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { LangGraphWorkflow } from './workflow';
 
 describe('LangGraphWorkflow', () => {
   let workflow: LangGraphWorkflow;
 
+  const knowledgeMock = {
+    search: vi.fn().mockResolvedValue([]),
+  };
+
   beforeAll(() => {
-    workflow = new LangGraphWorkflow();
+    workflow = new LangGraphWorkflow(knowledgeMock as never);
   });
 
   const run = (text: string) =>
@@ -64,6 +68,24 @@ describe('LangGraphWorkflow', () => {
       const d = await run(text);
       expect(d.action, `"${text}" should be replied by LLM`).toBe('reply');
     }
+  });
+
+  it('RAG: reply action → retrieveKB node fetches knowledge for last user message', async () => {
+    knowledgeMock.search.mockResolvedValue([{ content: 'Chính sách bảo hành 12 tháng', similarity: 0.85 }]);
+    const d = await workflow.run({
+      conversationId: 'test',
+      history: [{ role: 'user', content: 'Bảo hành bao lâu vậy?' }],
+      settings: {},
+    });
+    expect(knowledgeMock.search).toHaveBeenCalledWith('Bảo hành bao lâu vậy?', 5);
+    expect(d.knowledge).toEqual([{ content: 'Chính sách bảo hành 12 tháng', similarity: 0.85 }]);
+  });
+
+  it('RAG: escalate action → no knowledge retrieval', async () => {
+    knowledgeMock.search.mockClear();
+    const d = await run('Tôi muốn khiếu nại!');
+    expect(d.action).toBe('escalate');
+    expect(knowledgeMock.search).not.toHaveBeenCalled();
   });
 
   it('classifies greetings as reply', async () => {
