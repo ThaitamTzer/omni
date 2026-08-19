@@ -26,8 +26,11 @@ describe('AiService.processConversation', () => {
     message: { findMany: vi.fn() },
   };
   const settingsMock = { getAll: vi.fn(), getAiRules: vi.fn() };
-  const strandsMock = { generateReply: vi.fn(), sendReplyAndStore: vi.fn() };
   const workflowMock = { run: vi.fn() };
+  const executorMock = { invoke: vi.fn() };
+  const replyMock = { sendReplyAndStore: vi.fn() };
+  const handoffMock = { handoff: vi.fn() };
+  const logsMock = { log: vi.fn(), logToolCall: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,15 +44,20 @@ describe('AiService.processConversation', () => {
     prismaMock.conversation.update.mockResolvedValue(CONV());
     settingsMock.getAll.mockResolvedValue(SETTINGS);
     settingsMock.getAiRules.mockResolvedValue([]);
-    strandsMock.generateReply.mockResolvedValue('Xin chào bạn');
-    strandsMock.sendReplyAndStore.mockResolvedValue(undefined);
-    workflowMock.run.mockResolvedValue({ action: 'reply', intent: 'greeting', confidence: 0.9 });
+    workflowMock.run.mockResolvedValue({ action: 'RUN_AGENT', reasonCode: 'greeting', intent: 'greeting', confidenceBand: 'high' });
+    executorMock.invoke.mockResolvedValue({ action: 'REPLY', reply: 'Xin chào bạn', reasonCode: 'ANSWERED' });
+    replyMock.sendReplyAndStore.mockResolvedValue(undefined);
+    handoffMock.handoff.mockResolvedValue(undefined);
+    logsMock.log.mockResolvedValue(undefined);
 
     service = new AiService(
       prismaMock as never,
       settingsMock as never,
-      strandsMock as never,
       workflowMock as never,
+      executorMock as never,
+      replyMock as never,
+      handoffMock as never,
+      logsMock as never,
     );
   });
 
@@ -57,26 +65,25 @@ describe('AiService.processConversation', () => {
     delete process.env.OPENAI_API_KEY;
   });
 
-  it('TH#19: conversation does not exist → returns silently', async () => {
+  it('TH#19: conversation không tồn tại → return im lặng', async () => {
     prismaMock.conversation.findUnique.mockResolvedValue(null);
 
     await service.processConversation('conv-x', 'page-1');
 
-    expect(prismaMock.agentLog.create).not.toHaveBeenCalled();
-    expect(prismaMock.conversation.update).not.toHaveBeenCalled();
     expect(workflowMock.run).not.toHaveBeenCalled();
+    expect(replyMock.sendReplyAndStore).not.toHaveBeenCalled();
+    expect(handoffMock.handoff).not.toHaveBeenCalled();
   });
 
-  it('TH#19: conversation soft-deleted → returns silently', async () => {
+  it('TH#19: conversation soft-deleted → return im lặng', async () => {
     prismaMock.conversation.findUnique.mockResolvedValue(CONV({ deletedAt: new Date() }));
 
     await service.processConversation('conv-1', 'page-1');
 
     expect(workflowMock.run).not.toHaveBeenCalled();
-    expect(prismaMock.conversation.update).not.toHaveBeenCalled();
   });
 
-  it('TH#19: aiEnabled=false → returns silently', async () => {
+  it('TH#19: aiEnabled=false → return im lặng', async () => {
     prismaMock.conversation.findUnique.mockResolvedValue(CONV({ aiEnabled: false }));
 
     await service.processConversation('conv-1', 'page-1');
@@ -84,135 +91,124 @@ describe('AiService.processConversation', () => {
     expect(workflowMock.run).not.toHaveBeenCalled();
   });
 
-  it('TH#9: global hourly rate limit exceeded → rate_limited + pending, no workflow', async () => {
+  it('TH#9: global hourly rate limit → rate_limited + handoff, no workflow', async () => {
     prismaMock.agentLog.count.mockResolvedValue(10);
 
     await service.processConversation('conv-1', 'page-1');
 
-    const logCall = prismaMock.agentLog.create.mock.calls[0][0].data;
-    expect(logCall.event).toBe('rate_limited');
-    expect(logCall.payload.reason).toBe('global_hourly_cap');
-    const updateData = prismaMock.conversation.update.mock.calls[0][0].data;
-    expect(updateData.status).toBe('pending');
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'rate_limited', expect.objectContaining({ reason: 'global_hourly_cap' }));
+    expect(handoffMock.handoff).toHaveBeenCalledWith('conv-1', 'rate_limited_global');
     expect(workflowMock.run).not.toHaveBeenCalled();
   });
 
-  it('TH#10: per-conversation rate limit exceeded → rate_limited + pending, no strands', async () => {
+  it('TH#10: per-conversation rate limit → rate_limited + handoff, no executor', async () => {
     prismaMock.conversation.findUnique.mockResolvedValue(CONV({ aiReplyCount: 10 }));
 
     await service.processConversation('conv-1', 'page-1');
 
-    const logCall = prismaMock.agentLog.create.mock.calls[0][0].data;
-    expect(logCall.event).toBe('rate_limited');
-    expect(logCall.payload.reason).toBe('conversation_cap');
-    const updateData = prismaMock.conversation.update.mock.calls[0][0].data;
-    expect(updateData.status).toBe('pending');
-    expect(strandsMock.generateReply).not.toHaveBeenCalled();
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'rate_limited', expect.objectContaining({ reason: 'conversation_cap' }));
+    expect(handoffMock.handoff).toHaveBeenCalledWith('conv-1', 'rate_limited_conversation');
+    expect(executorMock.invoke).not.toHaveBeenCalled();
   });
 
-  it('TH#12: decision skip → returns, no strands', async () => {
-    workflowMock.run.mockResolvedValue({ action: 'skip', intent: 'unknown', confidence: 0.3 });
+  it('decision IGNORE → return, không gọi gì thêm', async () => {
+    workflowMock.run.mockResolvedValue({ action: 'IGNORE', reasonCode: 'ignore', intent: 'unknown' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    expect(prismaMock.agentLog.create).toHaveBeenCalled(); // decision log
-    expect(strandsMock.generateReply).not.toHaveBeenCalled();
-    expect(strandsMock.sendReplyAndStore).not.toHaveBeenCalled();
-    expect(prismaMock.conversation.update).not.toHaveBeenCalled();
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'decision', expect.anything());
+    expect(executorMock.invoke).not.toHaveBeenCalled();
+    expect(replyMock.sendReplyAndStore).not.toHaveBeenCalled();
+    expect(handoffMock.handoff).not.toHaveBeenCalled();
   });
 
-  it('TH#11: decision escalate → sets pending, no strands', async () => {
-    workflowMock.run.mockResolvedValue({ action: 'escalate', intent: 'escalate', confidence: 0.95 });
+  it('decision RETRY_LATER → log retry_later, không handoff', async () => {
+    workflowMock.run.mockResolvedValue({ action: 'RETRY_LATER', reasonCode: 'busy' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    const updateData = prismaMock.conversation.update.mock.calls[0][0].data;
-    expect(updateData.status).toBe('pending');
-    expect(strandsMock.generateReply).not.toHaveBeenCalled();
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'retry_later', { reasonCode: 'busy' });
+    expect(handoffMock.handoff).not.toHaveBeenCalled();
   });
 
-  it('TH#13: AiRule replyText → sends template directly, no LLM, counts reply', async () => {
+  it('decision HANDOFF → handoffService.handoff với reasonCode', async () => {
+    workflowMock.run.mockResolvedValue({ action: 'HANDOFF', reasonCode: 'escalate_keyword', intent: 'escalate' });
+
+    await service.processConversation('conv-1', 'page-1');
+
+    expect(handoffMock.handoff).toHaveBeenCalledWith('conv-1', 'escalate_keyword', expect.anything());
+    expect(executorMock.invoke).not.toHaveBeenCalled();
+  });
+
+  it('decision RULE_REPLY → gửi template trực tiếp, không executor, count reply', async () => {
     workflowMock.run.mockResolvedValue({
-      action: 'reply',
-      intent: 'Hỏi giá sản phẩm',
-      confidence: 1,
-      replyText: 'Dạ, giá sản phẩm là 1.500.000đ ạ.',
+      action: 'RULE_REPLY',
+      reasonCode: 'rule_match',
+      reply: 'Dạ, giá sản phẩm là 1.500.000đ ạ.',
+      matchedRuleId: 'rule-1',
     });
-    process.env.OPENAI_API_KEY = 'test-key';
 
     await service.processConversation('conv-1', 'page-1');
 
-    expect(strandsMock.sendReplyAndStore).toHaveBeenCalledWith('page-1', expect.anything(), 'Dạ, giá sản phẩm là 1.500.000đ ạ.');
-    expect(strandsMock.generateReply).not.toHaveBeenCalled();
-    const sentLog = prismaMock.agentLog.create.mock.calls.find((c) => c[0].data.event === 'reply_sent')!;
-    expect(sentLog[0].data.payload.source).toBe('ai_rule');
+    expect(replyMock.sendReplyAndStore).toHaveBeenCalledWith('page-1', expect.anything(), 'Dạ, giá sản phẩm là 1.500.000đ ạ.');
+    expect(executorMock.invoke).not.toHaveBeenCalled();
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'reply_sent', { text: 'Dạ, giá sản phẩm là 1.500.000đ ạ.', source: 'ai_rule' });
     const updateCall = prismaMock.conversation.update.mock.calls.find((c) => c[0].data.aiReplyCount !== undefined)!;
     expect(updateCall[0].data.aiReplyCount).toBe(1);
   });
 
-  it('TH#15: no OPENAI_API_KEY on LLM branch → escalated_no_api_key + pending, no generateReply', async () => {
+  it('RULE_REPLY không có reply → không gửi gì', async () => {
+    workflowMock.run.mockResolvedValue({ action: 'RULE_REPLY', reasonCode: 'rule_match' });
+
+    await service.processConversation('conv-1', 'page-1');
+
+    expect(replyMock.sendReplyAndStore).not.toHaveBeenCalled();
+  });
+
+  it('TH#15: RUN_AGENT thiếu OPENAI_API_KEY → escalated_no_api_key + handoff', async () => {
     delete process.env.OPENAI_API_KEY;
-    workflowMock.run.mockResolvedValue({ action: 'reply', intent: 'price', confidence: 0.9 });
+    workflowMock.run.mockResolvedValue({ action: 'RUN_AGENT', reasonCode: 'price', intent: 'price' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    const logCall = prismaMock.agentLog.create.mock.calls.find((c) => c[0].data.event === 'escalated_no_api_key');
-    expect(logCall).toBeDefined();
-    const updateData = prismaMock.conversation.update.mock.calls.find((c) => c[0].data.status === 'pending');
-    expect(updateData).toBeDefined();
-    expect(strandsMock.generateReply).not.toHaveBeenCalled();
-    expect(strandsMock.sendReplyAndStore).not.toHaveBeenCalled();
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'escalated_no_api_key', { reason: 'missing OPENAI_API_KEY' });
+    expect(handoffMock.handoff).toHaveBeenCalledWith('conv-1', 'escalated_no_api_key');
+    expect(executorMock.invoke).not.toHaveBeenCalled();
   });
 
-  it('TH#14+17: LLM reply success → sends + logs reply_sent + counts', async () => {
+  it('TH#14: RUN_AGENT + executor REPLY → gửi reply + log reply_sent source agent + count', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
-    strandsMock.generateReply.mockResolvedValue('Áo thun cotton giá 299.000đ ạ.');
+    workflowMock.run.mockResolvedValue({ action: 'RUN_AGENT', reasonCode: 'price', intent: 'price' });
+    executorMock.invoke.mockResolvedValue({ action: 'REPLY', reply: 'Áo thun cotton giá 299.000đ ạ.', reasonCode: 'ANSWERED' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    expect(strandsMock.generateReply).toHaveBeenCalledTimes(1);
-    expect(strandsMock.sendReplyAndStore).toHaveBeenCalledWith('page-1', expect.anything(), 'Áo thun cotton giá 299.000đ ạ.');
-    const sentLog = prismaMock.agentLog.create.mock.calls.find((c) => c[0].data.event === 'reply_sent')!;
-    expect(sentLog[0].data.payload.text).toBe('Áo thun cotton giá 299.000đ ạ.');
+    expect(executorMock.invoke).toHaveBeenCalledTimes(1);
+    expect(executorMock.invoke.mock.calls[0][1]).toMatchObject({ pageId: 'page-1', conversationId: 'conv-1', customerFbId: 'fb-customer-1' });
+    expect(replyMock.sendReplyAndStore).toHaveBeenCalledWith('page-1', expect.anything(), 'Áo thun cotton giá 299.000đ ạ.');
+    expect(logsMock.log).toHaveBeenCalledWith('conv-1', 'reply_sent', { text: 'Áo thun cotton giá 299.000đ ạ.', source: 'agent' });
     const updateCall = prismaMock.conversation.update.mock.calls.find((c) => c[0].data.aiReplyCount !== undefined)!;
     expect(updateCall[0].data.aiReplyCount).toBe(1);
   });
 
-  it('RAG: decision.knowledge → generateReply nhận knowledgeContext', async () => {
+  it('TH#18: executor HANDOFF → handoffService.handoff với reasonCode, không gửi', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
-    strandsMock.generateReply.mockResolvedValue('Dạ, bảo hành 12 tháng ạ.');
-    workflowMock.run.mockResolvedValue({
-      action: 'reply',
-      intent: 'unknown',
-      confidence: 0.3,
-      knowledge: [{ content: 'Chính sách bảo hành 12 tháng.', similarity: 0.85 }],
-    });
+    workflowMock.run.mockResolvedValue({ action: 'RUN_AGENT', reasonCode: 'unknown', intent: 'unknown' });
+    executorMock.invoke.mockResolvedValue({ action: 'HANDOFF', reasonCode: 'INSUFFICIENT_KNOWLEDGE' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    const args = strandsMock.generateReply.mock.calls[0][0];
-    expect(args.knowledgeContext).toContain('Chính sách bảo hành 12 tháng.');
+    expect(handoffMock.handoff).toHaveBeenCalledWith('conv-1', 'INSUFFICIENT_KNOWLEDGE', expect.anything());
+    expect(replyMock.sendReplyAndStore).not.toHaveBeenCalled();
   });
 
-  it('RAG: không có knowledge → knowledgeContext undefined', async () => {
+  it('executor trả HANDOFF → handoffService.handoff, không gửi (policy đã xử lý REPLY rỗng)', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
-    strandsMock.generateReply.mockResolvedValue('Xin chào ạ.');
-    workflowMock.run.mockResolvedValue({ action: 'reply', intent: 'greeting', confidence: 0.9, knowledge: [] });
+    executorMock.invoke.mockResolvedValue({ action: 'HANDOFF', reasonCode: 'INSUFFICIENT_KNOWLEDGE' });
 
     await service.processConversation('conv-1', 'page-1');
 
-    const args = strandsMock.generateReply.mock.calls[0][0];
-    expect(args.knowledgeContext).toBeUndefined();
-  });
-
-  it('TH#18: generateReply returns null → pending, no send', async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
-    strandsMock.generateReply.mockResolvedValue(null);
-
-    await service.processConversation('conv-1', 'page-1');
-
-    const updateData = prismaMock.conversation.update.mock.calls.find((c) => c[0].data.status === 'pending');
-    expect(updateData).toBeDefined();
-    expect(strandsMock.sendReplyAndStore).not.toHaveBeenCalled();
+    expect(handoffMock.handoff).toHaveBeenCalled();
+    expect(replyMock.sendReplyAndStore).not.toHaveBeenCalled();
   });
 });

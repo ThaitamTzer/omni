@@ -26,6 +26,8 @@ export type KnowledgeKind = 'text' | 'pdf' | 'docx' | 'xlsx' | 'image';
 
 export interface KnowledgeSearchResult {
   content: string;
+  /** KnowledgeFile id chứa chunk (để trích dẫn nguồn). */
+  sourceId: string;
   similarity: number;
 }
 
@@ -215,9 +217,9 @@ export class KnowledgeService {
     if (!this.openai || !query.trim()) return [];
     const [res] = await this.embed([query]);
     const rows = await this.prisma.$queryRaw<
-      Array<{ content: string; similarity: number }>
+      Array<{ content: string; sourceId: string; similarity: number }>
     >`
-      SELECT content, 1 - (vector <=> ${res}::vector) AS similarity
+      SELECT content, "fileId" AS "sourceId", 1 - (vector <=> ${res}::vector) AS similarity
       FROM "KnowledgeChunk"
       WHERE vector IS NOT NULL
       ORDER BY vector <=> ${res}::vector
@@ -225,7 +227,7 @@ export class KnowledgeService {
     `;
     return rows
       .filter((r) => r.similarity > 0.3)
-      .map((r) => ({ content: r.content, similarity: r.similarity }));
+      .map((r) => ({ content: r.content, sourceId: r.sourceId, similarity: r.similarity }));
   }
 
   // ---------- Admin ----------

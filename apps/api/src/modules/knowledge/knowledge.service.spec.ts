@@ -74,12 +74,13 @@ describe('KnowledgeService', () => {
         data: [{ embedding: Array(1536).fill(0.01) }],
       });
       prismaMock.$queryRaw.mockResolvedValue([
-        { content: 'Chính sách bảo hành 12 tháng', similarity: 0.85 },
-        { content: 'nội dung không liên quan', similarity: 0.1 },
+        { content: 'Chính sách bảo hành 12 tháng', sourceId: 'file-1', similarity: 0.85 },
+        { content: 'nội dung không liên quan', sourceId: 'file-2', similarity: 0.1 },
       ]);
       const result = await service.search('bảo hành bao lâu?');
       expect(result).toHaveLength(1);
       expect(result[0].content).toBe('Chính sách bảo hành 12 tháng');
+      expect(result[0].sourceId).toBe('file-1');
       expect(prismaMock.$queryRaw).toHaveBeenCalled();
     });
   });

@@ -1,62 +1,74 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { LangGraphWorkflow } from './workflow';
+import type { AiModelConfig } from '../ai.config';
 
-describe('LangGraphWorkflow', () => {
-  let workflow: LangGraphWorkflow;
+const config: AiModelConfig = {
+  chatModel: 'gpt-4o-mini',
+  classifyModel: 'gpt-4o-mini',
+  temperature: 0.2,
+  timeoutMs: 20000,
+  maxRetries: 2,
+};
 
-  const knowledgeMock = {
-    search: vi.fn().mockResolvedValue([]),
-  };
+/** LLM classifier mock mặc định — trả unknown để test regex-first. */
+function makeWorkflow(classifyImpl?: (input: { text: string }) => Promise<{ intent: string; band: 'high' | 'medium' | 'low' }>) {
+  return new LangGraphWorkflow(
+    config,
+    classifyImpl
+      ? (input: { text: string; config: AiModelConfig }) => classifyImpl(input)
+      : undefined,
+  );
+}
 
-  beforeAll(() => {
-    workflow = new LangGraphWorkflow(knowledgeMock as never);
+const run = (workflow: LangGraphWorkflow, text: string) =>
+  workflow.run({
+    conversationId: 'test',
+    history: [{ role: 'user', content: text }],
+    settings: {},
   });
 
-  const run = (text: string) =>
-    workflow.run({
-      conversationId: 'test',
-      history: [{ role: 'user', content: text }],
-      settings: {},
-    });
+const runWithRules = (workflow: LangGraphWorkflow, text: string, rules: Array<Record<string, unknown>>) =>
+  workflow.run({
+    conversationId: 'test',
+    history: [{ role: 'user', content: text }],
+    settings: {},
+    aiRules: rules as never,
+  });
 
-  const runWithRules = (text: string, rules: Array<Record<string, unknown>>) =>
-    workflow.run({
-      conversationId: 'test',
-      history: [{ role: 'user', content: text }],
-      settings: {},
-      aiRules: rules as never,
-    });
-
-  it('classifies price questions as reply', async () => {
-    const d = await run('Áo thun này giá bao nhiêu ạ?');
+describe('LangGraphWorkflow v2', () => {
+  it('price question → RUN_AGENT + intent price', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Áo thun này giá bao nhiêu ạ?');
     expect(d.intent).toBe('price');
-    expect(d.confidence).toBeGreaterThanOrEqual(0.7);
-    expect(d.action).toBe('reply');
+    expect(d.confidenceBand).toBe('high');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('classifies order tracking as reply', async () => {
-    const d = await run('Cho em hỏi đơn hàng DH12345 giao khi nào ạ?');
+  it('order tracking → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Cho em hỏi đơn hàng DH12345 giao khi nào ạ?');
     expect(d.intent).toBe('order');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('escalates complaints', async () => {
-    const d = await run('Dịch vụ của shop tệ quá, tôi muốn khiếu nại!');
+  it('escalate keyword → HANDOFF', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Dịch vụ của shop tệ quá, tôi muốn khiếu nại!');
     expect(d.intent).toBe('escalate');
-    expect(d.action).toBe('escalate');
+    expect(d.action).toBe('HANDOFF');
+    expect(d.reasonCode).toBe('escalate_keyword');
   });
 
-  it('unknown/low-confidence messages → LLM tries to reply (not escalated)', async () => {
-    const d = await run('xyz qwerty');
+  it('unknown/low-confidence → RUN_AGENT (agent thử, không HANDOFF mù)', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'xyz qwerty');
     expect(d.intent).toBe('unknown');
-    expect(d.confidence).toBeLessThan(0.7);
-    expect(d.action).toBe('reply');
+    expect(d.confidenceBand).toBe('low');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('REGRESSION: follow-up questions after greeting are still replied', async () => {
-    // Real customer messages from production logs — these were escalated
-    // because they don't match any regex pattern, leaving the AI silent
-    // after the first reply.
+  it('REGRESSION: follow-up questions sau greeting vẫn được xử lý (RUN_AGENT)', async () => {
+    const w = makeWorkflow();
     const cases = [
       'tên gì vậy em',
       'em làm việc từ giờ nào đến giờ nào?',
@@ -65,121 +77,126 @@ describe('LangGraphWorkflow', () => {
       'mình muốn mua đồ thì liên hệ ai ?',
     ];
     for (const text of cases) {
-      const d = await run(text);
-      expect(d.action, `"${text}" should be replied by LLM`).toBe('reply');
+      const d = await run(w, text);
+      expect(d.action, `"${text}" should go to agent`).toBe('RUN_AGENT');
     }
   });
 
-  it('RAG: reply action → retrieveKB node fetches knowledge for last user message', async () => {
-    knowledgeMock.search.mockResolvedValue([{ content: 'Chính sách bảo hành 12 tháng', similarity: 0.85 }]);
-    const d = await workflow.run({
-      conversationId: 'test',
-      history: [{ role: 'user', content: 'Bảo hành bao lâu vậy?' }],
-      settings: {},
-    });
-    expect(knowledgeMock.search).toHaveBeenCalledWith('Bảo hành bao lâu vậy?', 5);
-    expect(d.knowledge).toEqual([{ content: 'Chính sách bảo hành 12 tháng', similarity: 0.85 }]);
-  });
-
-  it('RAG: escalate action → no knowledge retrieval', async () => {
-    knowledgeMock.search.mockReset();
-    knowledgeMock.search.mockResolvedValue([]);
-    const d = await run('Tôi muốn khiếu nại!');
-    expect(d.action).toBe('escalate');
-    expect(knowledgeMock.search).not.toHaveBeenCalled();
-  });
-
-  it('RAG: KB match cao (≥0.55) gỡ rule template để LLM trả lời từ KB', async () => {
-    knowledgeMock.search.mockResolvedValue([
-      { content: 'Chính sách bảo hành 12 tháng, shop chịu phí chiều đi.', similarity: 0.62 },
-    ]);
-    const d = await runWithRules('bảo hành bao lâu vậy?', [
-      { name: 'Giao hàng', keywords: ['giao hàng', 'bao lâu', 'vận chuyển'], responseTemplate: 'Dạ giao 1-2 ngày ạ.', enabled: true, priority: 8 },
-    ]);
-    // Rule match trước, nhưng KB khớp tốt → replyText bị gỡ, LLM sẽ dùng KB
-    expect(d.replyText).toBeUndefined();
-    expect(d.action).toBe('reply');
-    expect(d.knowledge?.[0].similarity).toBeGreaterThanOrEqual(0.55);
-    // Reset để các test sau (rule template) không bị ảnh hưởng
-    knowledgeMock.search.mockReset();
-    knowledgeMock.search.mockResolvedValue([]);
-  });
-
-  it('RAG: KB match thấp (<0.55) → giữ rule template', async () => {
-    knowledgeMock.search.mockResolvedValue([
-      { content: 'Nội dung không liên quan lắm.', similarity: 0.4 },
-    ]);
-    const d = await runWithRules('giá áo thun bao nhiêu?', [
-      { name: 'Hỏi giá', keywords: ['giá', 'bao nhiêu'], responseTemplate: 'Dạ giá là 299.000đ ạ.', enabled: true, priority: 10 },
-    ]);
-    expect(d.replyText).toBe('Dạ giá là 299.000đ ạ.');
-    knowledgeMock.search.mockReset();
-    knowledgeMock.search.mockResolvedValue([]);
-  });
-
-  it('classifies greetings as reply', async () => {
-    const d = await run('Chào shop, cho em hỏi chút');
+  it('greeting → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Chào shop, cho em hỏi chút');
     expect(d.intent).toBe('greeting');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('classifies shipping questions as reply', async () => {
-    const d = await run('Giao hàng nội thành mất bao lâu vậy?');
+  it('shipping → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Giao hàng nội thành mất bao lâu vậy?');
     expect(d.intent).toBe('shipping');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('TH#13: matching AiRule → returns template as replyText (no LLM)', async () => {
-    const d = await runWithRules('giá áo thun bao nhiêu vậy?', [
-      { name: 'Hỏi giá', keywords: ['giá', 'bao nhiêu'], responseTemplate: 'Dạ, giá sản phẩm là 299.000đ ạ.', enabled: true, priority: 1 },
+  it('matching AiRule → RULE_REPLY + matchedRuleId + reply (no LLM)', async () => {
+    const w = makeWorkflow();
+    const d = await runWithRules(w, 'giá áo thun bao nhiêu vậy?', [
+      { id: 'rule-1', name: 'Hỏi giá', keywords: ['giá', 'bao nhiêu'], responseTemplate: 'Dạ, giá sản phẩm là 299.000đ ạ.', enabled: true, priority: 1 },
     ]);
-    expect(d.action).toBe('reply');
-    expect(d.replyText).toBe('Dạ, giá sản phẩm là 299.000đ ạ.');
+    expect(d.action).toBe('RULE_REPLY');
+    expect(d.reply).toBe('Dạ, giá sản phẩm là 299.000đ ạ.');
+    expect(d.matchedRuleId).toBe('rule-1');
+    expect(d.reasonCode).toBe('rule_match');
   });
 
-  it('TH#13: disabled rule → ignored, falls back to classify', async () => {
-    const d = await runWithRules('giá áo thun bao nhiêu vậy?', [
-      { name: 'Hỏi giá', keywords: ['giá'], responseTemplate: 'Dạ giá là...', enabled: false, priority: 1 },
+  it('disabled rule → ignored, RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await runWithRules(w, 'giá áo thun bao nhiêu vậy?', [
+      { id: 'rule-1', name: 'Hỏi giá', keywords: ['giá'], responseTemplate: 'Dạ giá là...', enabled: false, priority: 1 },
     ]);
-    expect(d.replyText).toBeUndefined();
-    expect(d.action).toBe('reply');
+    expect(d.reply).toBeUndefined();
+    expect(d.action).toBe('RUN_AGENT');
     expect(d.intent).toBe('price');
   });
 
-  it('TH#13: higher priority rule wins when multiple match', async () => {
-    const d = await runWithRules('hoàn tiền đơn DH12345', [
-      { name: 'Hoàn tiền', keywords: ['hoàn tiền'], responseTemplate: 'Dạ shop sẽ hỗ trợ hoàn tiền ạ.', enabled: true, priority: 5 },
-      { name: 'Tra đơn', keywords: ['đơn'], responseTemplate: 'Đơn đang giao ạ.', enabled: true, priority: 1 },
+  it('higher priority rule wins when multiple match', async () => {
+    const w = makeWorkflow();
+    const d = await runWithRules(w, 'hoàn tiền đơn DH12345', [
+      { id: 'r1', name: 'Hoàn tiền', keywords: ['hoàn tiền'], responseTemplate: 'Dạ shop sẽ hỗ trợ hoàn tiền ạ.', enabled: true, priority: 5 },
+      { id: 'r2', name: 'Tra đơn', keywords: ['đơn'], responseTemplate: 'Đơn đang giao ạ.', enabled: true, priority: 1 },
     ]);
-    expect(d.replyText).toBe('Dạ shop sẽ hỗ trợ hoàn tiền ạ.');
+    expect(d.reply).toBe('Dạ shop sẽ hỗ trợ hoàn tiền ạ.');
+    expect(d.matchedRuleId).toBe('r1');
   });
 
-  it('TH#11: refund keyword escalates', async () => {
-    const d = await run('Tôi muốn hoàn tiền đơn hàng');
+  it('refund keyword escalates → HANDOFF', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Tôi muốn hoàn tiền đơn hàng');
     expect(d.intent).toBe('escalate');
-    expect(d.action).toBe('escalate');
+    expect(d.action).toBe('HANDOFF');
   });
 
-  it('TH#11: legal threat escalates', async () => {
-    const d = await run('Tôi sẽ báo công an nếu không giải quyết');
-    expect(d.action).toBe('escalate');
+  it('legal threat escalates → HANDOFF', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Tôi sẽ báo công an nếu không giải quyết');
+    expect(d.action).toBe('HANDOFF');
   });
 
-  it('TH#14: product question → reply', async () => {
-    const d = await run('Còn hàng size L không ạ?');
+  it('product question → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Còn hàng size L không ạ?');
     expect(d.intent).toBe('product');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('TH#14: faq question → reply', async () => {
-    const d = await run('Chính sách đổi trả của shop thế nào?');
+  it('faq question → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Chính sách đổi trả của shop thế nào?');
     expect(d.intent).toBe('faq');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
   });
 
-  it('TH#14: thanks → reply', async () => {
-    const d = await run('Cảm ơn shop nhiều nha');
+  it('thanks → RUN_AGENT', async () => {
+    const w = makeWorkflow();
+    const d = await run(w, 'Cảm ơn shop nhiều nha');
     expect(d.intent).toBe('thanks');
-    expect(d.action).toBe('reply');
+    expect(d.action).toBe('RUN_AGENT');
+  });
+
+  describe('hybrid classifier', () => {
+    it('regex chắc (price) → KHÔNG gọi LLM classifier', async () => {
+      const llm = vi.fn().mockResolvedValue({ intent: 'price', band: 'high' });
+      const w = makeWorkflow(llm);
+      const d = await run(w, 'giá bao nhiêu?');
+      expect(d.intent).toBe('price');
+      expect(llm).not.toHaveBeenCalled();
+    });
+
+    it('unknown → gọi LLM classifier, dùng kết quả LLM', async () => {
+      const llm = vi.fn().mockResolvedValue({ intent: 'order', band: 'high' });
+      const w = makeWorkflow(llm);
+      const d = await run(w, 'đơn em đâu rồi');
+      // 'đơn' match regex order 0.9 → regex-first. Dùng text thật không match:
+      // 'em chưa thấy hàng' → unknown → LLM
+      const d2 = await run(w, 'em chưa thấy hàng đâu');
+      expect(llm).toHaveBeenCalledWith(expect.objectContaining({ text: 'em chưa thấy hàng đâu' }));
+      expect(d2.intent).toBe('order');
+      expect(d2.action).toBe('RUN_AGENT');
+    });
+
+    it('LLM classifier lỗi → fallback RUN_AGENT (intent unknown)', async () => {
+      const llm = vi.fn().mockRejectedValue(new Error('timeout'));
+      const w = makeWorkflow(llm);
+      const d = await run(w, 'em chưa thấy hàng đâu');
+      expect(d.intent).toBe('unknown');
+      expect(d.action).toBe('RUN_AGENT');
+      expect(d.confidenceBand).toBe('low');
+    });
+
+    it('LLM classify ra escalate → HANDOFF', async () => {
+      const llm = vi.fn().mockResolvedValue({ intent: 'escalate', band: 'high' });
+      const w = makeWorkflow(llm);
+      const d = await run(w, 'em chưa thấy hàng đâu');
+      expect(d.intent).toBe('escalate');
+      expect(d.action).toBe('HANDOFF');
+    });
   });
 });

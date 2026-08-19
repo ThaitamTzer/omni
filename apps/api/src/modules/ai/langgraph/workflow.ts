@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StateGraph, Annotation, START, END } from '@langchain/langgraph';
-import { AiDecision } from '../ai.service';
-import { KnowledgeService } from '../../knowledge/knowledge.service';
+import { ChatOpenAI } from '@langchain/openai';
+import { z } from 'zod';
+import { DecisionResult, DecisionAction } from './types';
+import type { AiModelConfig } from '../ai.config';
 
 /**
  * Conversation state shared across the graph.
@@ -11,13 +13,22 @@ const ConversationState = Annotation.Root({
   history: Annotation<Array<{ role: string; content: string }>>,
   settings: Annotation<Record<string, string>>,
   aiRules: Annotation<
-    Array<{ name: string; keywords: string[]; responseTemplate: string | null; enabled: boolean; priority: number }>
+    Array<{
+      id: string;
+      name: string;
+      keywords: string[];
+      responseTemplate: string | null;
+      enabled: boolean;
+      priority: number;
+    }>
   >,
   intent: Annotation<string>,
   confidence: Annotation<number>,
-  action: Annotation<'reply' | 'escalate' | 'skip'>,
+  action: Annotation<DecisionAction>,
   replyText: Annotation<string | null>,
-  knowledge: Annotation<Array<{ content: string; similarity: number }>>,
+  matchedRuleId: Annotation<string>,
+  reasonCode: Annotation<string>,
+  confidenceBand: Annotation<'high' | 'medium' | 'low'>,
 });
 
 type State = typeof ConversationState.State;
@@ -28,18 +39,38 @@ const ESCALATE_KEYWORDS = [
   'luật sư', 'báo công an', 'kiện', 'tòa án', 'bồi thường',
 ];
 
+/** Schema cho LLM classifier (structured output). */
+const ClassifySchema = z.object({
+  intent: z.enum([
+    'greeting', 'price', 'order', 'shipping', 'product', 'thanks', 'faq',
+    'escalate', 'unknown',
+  ]),
+  band: z.enum(['high', 'medium', 'low']),
+});
+
+export interface ClassifyLlmInput {
+  text: string;
+  config: AiModelConfig;
+}
+
 @Injectable()
 export class LangGraphWorkflow {
   private readonly logger = new Logger(LangGraphWorkflow.name);
   private readonly graph;
 
-  constructor(private readonly knowledge: KnowledgeService) {
+  constructor(
+    private readonly config: AiModelConfig,
+    /** Inject để test — hàm classify bằng LLM (hybrid). */
+    private readonly classifyWithLlmImpl?: (input: ClassifyLlmInput) => Promise<{
+      intent: string;
+      band: 'high' | 'medium' | 'low';
+    }>,
+  ) {
     this.graph = this.buildGraph();
   }
 
   /**
    * Rule-based intent classification (fast, no LLM cost).
-   * Extend with LLM classification later if needed.
    */
   private classifyIntent(text: string): { intent: string; confidence: number } {
     const lower = text.toLowerCase();
@@ -65,16 +96,78 @@ export class LangGraphWorkflow {
     return { intent: 'unknown', confidence: 0.3 };
   }
 
+  /**
+   * LLM classifier (small model) — chỉ gọi khi regex không chắc (unknown).
+   * Trả intent + confidence band. Model từ config (AI_CLASSIFY_MODEL).
+   */
+  private async classifyWithLlm(text: string): Promise<{
+    intent: string;
+    band: 'high' | 'medium' | 'low';
+  }> {
+    if (this.classifyWithLlmImpl) {
+      return this.classifyWithLlmImpl({ text, config: this.config });
+    }
+
+    const model = new ChatOpenAI({
+      model: this.config.classifyModel,
+      temperature: 0,
+      timeout: this.config.timeoutMs,
+      maxRetries: this.config.maxRetries,
+    }).withStructuredOutput(ClassifySchema);
+
+    const result = await model.invoke([
+      {
+        role: 'system',
+        content:
+          'Phân loại ý định tin nhắn khách hàng CSKH tiếng Việt. ' +
+          'intent: greeting|price|order|shipping|product|thanks|faq|escalate|unknown. ' +
+          'Escalate khi khách bực bội/khiếu nại/hoàn tiền/lừa đảo/kiện tụng. ' +
+          'band: high nếu chắc chắn, low nếu mơ hồ.',
+      },
+      { role: 'user', content: text },
+    ]);
+
+    return { intent: result.intent, band: result.band };
+  }
+
   private async classifyNode(state: State): Promise<Partial<State>> {
     const lastUserText = [...state.history].reverse().find((m) => m.role === 'user')?.content ?? '';
+
+    // Rule đã khớp (RULE_REPLY) — không ghi đè reasonCode/intent của rule.
+    if (state.replyText) {
+      return {};
+    }
+
     const { intent, confidence } = this.classifyIntent(lastUserText);
-    return { intent, confidence };
+
+    // Regex chắc (0.9+) → dùng luôn, không tốn LLM.
+    if (confidence >= 0.7) {
+      return {
+        intent,
+        confidence,
+        reasonCode: intent === 'escalate' ? 'escalate_keyword' : intent,
+        confidenceBand: confidence >= 0.9 ? 'high' : 'medium',
+      };
+    }
+
+    // Mơ hồ (unknown 0.3) → gọi LLM classifier nhỏ.
+    try {
+      const llm = await this.classifyWithLlm(lastUserText);
+      return {
+        intent: llm.intent,
+        confidence: llm.band === 'high' ? 0.9 : llm.band === 'medium' ? 0.7 : 0.5,
+        reasonCode: llm.intent === 'escalate' ? 'escalate_keyword' : llm.intent,
+        confidenceBand: llm.band,
+      };
+    } catch (e) {
+      this.logger.warn(`LLM classify failed: ${(e as Error).message}`);
+      // Fallback an toàn: RUN_AGENT (agent tự xử lý, không HANDOFF mù).
+      return { intent: 'unknown', confidence: 0.3, reasonCode: 'unknown', confidenceBand: 'low' };
+    }
   }
 
   /**
    * Match the last customer message against enabled AiRules (keywords → template).
-   * When a rule matches and has a template, use it directly — faster and more
-   * consistent than LLM for well-known questions.
    */
   private async ruleMatchNode(state: State): Promise<Partial<State>> {
     const lastUserText = [...state.history].reverse().find((m) => m.role === 'user')?.content ?? '';
@@ -87,57 +180,34 @@ export class LangGraphWorkflow {
     for (const rule of rules) {
       const kws = (rule.keywords ?? []).map((k) => k.toLowerCase());
       if (kws.some((k) => lower.includes(k))) {
-        return { action: 'reply', replyText: rule.responseTemplate, intent: rule.name, confidence: 1 };
+        return {
+          action: 'RULE_REPLY',
+          replyText: rule.responseTemplate,
+          matchedRuleId: rule.id,
+          intent: rule.name,
+          confidence: 1,
+          reasonCode: 'rule_match',
+          confidenceBand: 'high',
+        };
       }
     }
     return {};
   }
 
   private async decideNode(state: State): Promise<Partial<State>> {
-    const { intent, confidence } = state;
+    const { intent } = state;
 
-    // A rule already produced an exact template reply — use it.
+    // Rule đã có template reply chính xác — gửi thẳng, không xuống agent.
     if (state.replyText) {
-      return { action: 'reply' };
+      return { action: 'RULE_REPLY' };
     }
-    // Escalate keywords (complaints, refund, legal...) always go to a human.
+    // Escalate keywords (khiếu nại, hoàn tiền, pháp lý...) → luôn bàn giao người.
     if (intent === 'escalate') {
-      return { action: 'escalate' };
+      return { action: 'HANDOFF' };
     }
-    // Known patterns (price, shipping, greeting...) → reply with high confidence.
-    if (confidence >= 0.7) {
-      return { action: 'reply' };
-    }
-    // Unknown/low-confidence: let the LLM try first — it can still refuse or
-    // defer to a human (system prompt). Escalation happens later when the LLM
-    // returns no usable reply or the API key is missing.
-    return { action: 'reply' };
-  }
-
-  /**
-   * RAG retrieval: when the decision is to reply, fetch relevant knowledgebase
-   * chunks for the last customer message. This context is passed to the LLM
-   * (Strands) so it can answer from the KB.
-   *
-   * If a KB chunk matches with good similarity (≥ 0.55), drop any rule template
-   * so the LLM answers from the KB instead of a generic rule that may not fit.
-   */
-  private async retrieveKbNode(state: State): Promise<Partial<State>> {
-    if (state.action !== 'reply') return {};
-    const lastUserText = [...state.history].reverse().find((m) => m.role === 'user')?.content ?? '';
-    if (!lastUserText.trim()) return {};
-    try {
-      const knowledge = await this.knowledge.search(lastUserText, 5);
-      const best = Math.max(0, ...knowledge.map((k) => k.similarity));
-      return {
-        knowledge,
-        // Good KB match overrides a rule template (wrong-context risk).
-        ...(best >= 0.55 && state.replyText ? { replyText: null } : {}),
-      };
-    } catch (e) {
-      this.logger.warn(`KB retrieval failed: ${(e as Error).message}`);
-      return {};
-    }
+    // Mọi intent khác (kể cả unknown) → cho agent xử lý.
+    // Output Policy sẽ bàn giao nếu agent không trả lời được.
+    return { action: 'RUN_AGENT' };
   }
 
   private buildGraph() {
@@ -145,12 +215,10 @@ export class LangGraphWorkflow {
       .addNode('ruleMatch', this.ruleMatchNode.bind(this))
       .addNode('classify', this.classifyNode.bind(this))
       .addNode('decide', this.decideNode.bind(this))
-      .addNode('retrieveKB', this.retrieveKbNode.bind(this))
       .addEdge(START, 'ruleMatch')
       .addEdge('ruleMatch', 'classify')
       .addEdge('classify', 'decide')
-      .addEdge('decide', 'retrieveKB')
-      .addEdge('retrieveKB', END);
+      .addEdge('decide', END);
 
     return g.compile();
   }
@@ -163,13 +231,14 @@ export class LangGraphWorkflow {
     history: Array<{ role: string; content: string }>;
     settings: Record<string, string>;
     aiRules?: Array<{
+      id: string;
       name: string;
       keywords: string[];
       responseTemplate: string | null;
       enabled: boolean;
       priority: number;
     }>;
-  }): Promise<AiDecision> {
+  }): Promise<DecisionResult> {
     const result = await this.graph.invoke({
       conversationId: input.conversationId,
       history: input.history,
@@ -178,11 +247,12 @@ export class LangGraphWorkflow {
     });
 
     return {
-      intent: result.intent,
-      confidence: result.confidence,
       action: result.action,
-      replyText: result.replyText ?? undefined,
-      knowledge: result.knowledge ?? [],
+      reasonCode: result.reasonCode ?? result.intent ?? 'unknown',
+      reply: result.replyText ?? undefined,
+      matchedRuleId: result.matchedRuleId,
+      intent: result.intent,
+      confidenceBand: result.confidenceBand ?? (result.confidence >= 0.7 ? 'high' : 'low'),
     };
   }
 }

@@ -37,9 +37,18 @@ export class WebhookService {
 
   /**
    * Push a raw webhook payload into the queue for async processing.
+   * Dùng `jobId = message.mid` để BullMQ chống trùng (webhook retry →
+   * cùng mid → job bị bỏ qua).
    */
   async enqueueEvent(payload: unknown): Promise<void> {
+    // Lấy facebook message id (nếu payload là message event)
+    const entry = (payload as {
+      entry?: Array<{ messaging?: Array<{ message?: { mid?: string } }> }>;
+    })?.entry?.[0];
+    const mid = entry?.messaging?.[0]?.message?.mid;
+
     await this.webhookQueue.add('webhook-event', payload, {
+      jobId: mid ?? undefined, // undefined → BullMQ tự sinh id (không dedupe)
       attempts: 3,
       backoff: { type: 'exponential', delay: 2000 },
       removeOnComplete: 1000,

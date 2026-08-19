@@ -129,8 +129,10 @@ Theo `diagnosing-bugs`: xây **feedback loop đỏ** (test/curl chạy được 
 
 ## AI Pipeline (tóm tắt)
 
-Webhook → BullMQ `webhook-events` → `MessageService.processInbound` (persist + find-or-create conversation) → BullMQ `ai-replies` → `AiService.processConversation`:
-1. Rate limit (global/h per conversation) → escalate nếu quá
-2. `LangGraphWorkflow.run` — node `ruleMatch` (AiRule keyword→template, ưu tiên, không tốn LLM) → `classify` (regex) → `decide`
-3. `decision.replyText` (rule) → gửi thẳng; ngược lại nếu thiếu `OPENAI_API_KEY` → escalate; còn lại `Strands.generateReply` (LLM + tools: `lookup_product`/`lookup_order`/`lookup_faq` tra cứu DB thật)
-4. Gửi qua Messenger, lưu Message, log AgentLog (`decision`, `reply_sent`, `rate_limited`, `escalated_no_api_key`, `tool_lookup`)
+Webhook → BullMQ `webhook-events` (`jobId = message.mid` chống trùng) → `MessageService.processInbound` (persist + find-or-create conversation) → BullMQ `ai-replies` → `AiProcessor` (ConversationLock Redis chống chạy chồng) → `AiService.processConversation`:
+
+1. Rate limit (global/h + per-conversation) → handoff nếu quá
+2. `LangGraphWorkflow.run` (Decision Graph) — node `ruleMatch` (AiRule keyword→template, ưu tiên, không tốn LLM) → `classify` (hybrid: regex chắc chạy trước, LLM classifier nhỏ khi mơ hồ, fallback an toàn) → `decide` → `DecisionResult { action: RULE_REPLY|RUN_AGENT|HANDOFF|IGNORE|RETRY_LATER, reasonCode, ... }`
+3. Routing theo action: `RULE_REPLY` → gửi template thẳng; `HANDOFF` → `HandoffService` (status pending + log + realtime); `IGNORE`/`RETRY_LATER` → bỏ qua; `RUN_AGENT` → xuống agent
+4. `LangChainAgentExecutor` (createAgent + ChatOpenAI + PostgresSaver checkpointer, `thread_id = hash(facebook:pageId:conversationId)`) — tools: `search_products`/`get_order`/`search_knowledge` (scope pageId/customerFbId inject từ runtime context, model không truyền) → trả `AgentDecision` structured (Zod qua responseFormat) → `OutputPolicyService` quyết định cuối REPLY/HANDOFF (không tin LLM confidence)
+5. Gửi qua Messenger, lưu Message, log AgentLog (`decision`, `model_call`, `tool_lookup`, `tool_result`, `policy_decision`, `handoff`, `reply_sent`, `rate_limited`, `escalated_no_api_key`, `error`)
