@@ -118,6 +118,9 @@ export class LangGraphWorkflow {
    * RAG retrieval: when the decision is to reply, fetch relevant knowledgebase
    * chunks for the last customer message. This context is passed to the LLM
    * (Strands) so it can answer from the KB.
+   *
+   * If a KB chunk matches with good similarity (≥ 0.55), drop any rule template
+   * so the LLM answers from the KB instead of a generic rule that may not fit.
    */
   private async retrieveKbNode(state: State): Promise<Partial<State>> {
     if (state.action !== 'reply') return {};
@@ -125,7 +128,12 @@ export class LangGraphWorkflow {
     if (!lastUserText.trim()) return {};
     try {
       const knowledge = await this.knowledge.search(lastUserText, 5);
-      return { knowledge };
+      const best = Math.max(0, ...knowledge.map((k) => k.similarity));
+      return {
+        knowledge,
+        // Good KB match overrides a rule template (wrong-context risk).
+        ...(best >= 0.55 && state.replyText ? { replyText: null } : {}),
+      };
     } catch (e) {
       this.logger.warn(`KB retrieval failed: ${(e as Error).message}`);
       return {};

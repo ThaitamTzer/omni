@@ -82,10 +82,39 @@ describe('LangGraphWorkflow', () => {
   });
 
   it('RAG: escalate action → no knowledge retrieval', async () => {
-    knowledgeMock.search.mockClear();
+    knowledgeMock.search.mockReset();
+    knowledgeMock.search.mockResolvedValue([]);
     const d = await run('Tôi muốn khiếu nại!');
     expect(d.action).toBe('escalate');
     expect(knowledgeMock.search).not.toHaveBeenCalled();
+  });
+
+  it('RAG: KB match cao (≥0.55) gỡ rule template để LLM trả lời từ KB', async () => {
+    knowledgeMock.search.mockResolvedValue([
+      { content: 'Chính sách bảo hành 12 tháng, shop chịu phí chiều đi.', similarity: 0.62 },
+    ]);
+    const d = await runWithRules('bảo hành bao lâu vậy?', [
+      { name: 'Giao hàng', keywords: ['giao hàng', 'bao lâu', 'vận chuyển'], responseTemplate: 'Dạ giao 1-2 ngày ạ.', enabled: true, priority: 8 },
+    ]);
+    // Rule match trước, nhưng KB khớp tốt → replyText bị gỡ, LLM sẽ dùng KB
+    expect(d.replyText).toBeUndefined();
+    expect(d.action).toBe('reply');
+    expect(d.knowledge?.[0].similarity).toBeGreaterThanOrEqual(0.55);
+    // Reset để các test sau (rule template) không bị ảnh hưởng
+    knowledgeMock.search.mockReset();
+    knowledgeMock.search.mockResolvedValue([]);
+  });
+
+  it('RAG: KB match thấp (<0.55) → giữ rule template', async () => {
+    knowledgeMock.search.mockResolvedValue([
+      { content: 'Nội dung không liên quan lắm.', similarity: 0.4 },
+    ]);
+    const d = await runWithRules('giá áo thun bao nhiêu?', [
+      { name: 'Hỏi giá', keywords: ['giá', 'bao nhiêu'], responseTemplate: 'Dạ giá là 299.000đ ạ.', enabled: true, priority: 10 },
+    ]);
+    expect(d.replyText).toBe('Dạ giá là 299.000đ ạ.');
+    knowledgeMock.search.mockReset();
+    knowledgeMock.search.mockResolvedValue([]);
   });
 
   it('classifies greetings as reply', async () => {
